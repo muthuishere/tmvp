@@ -97,3 +97,7 @@ Every agent found every root cause — including Haiku with tmvp. Without tmvp, 
 - `tmvp verbs [type]` · `tmvp llms [topic]` · any command `--llmhelp` — docs built into the binary
 - [llms.txt](llms.txt) — docs index for agents
 - [CHANGELOG.md](CHANGELOG.md)
+
+## License
+
+MIT — see [LICENSE](LICENSE).
