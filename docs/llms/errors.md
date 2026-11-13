@@ -1,0 +1,22 @@
+# Errors & exit codes
+
+Errors print as `error: <code>: <message> (hint: …)`; with `--json` as
+`{"type":"error","error":{"code":…,"message":…,"hint":…}}`. Messages never contain secret values.
+
+| Code | Exit | Meaning / what to do |
+|---|---|---|
+| `runtime` | 1 | unexpected failure; read the message |
+| `timeout` | 1 | hard timeout hit (also with `--force`); narrow the query or raise `--timeout` / `limits.timeout` |
+| `unreachable` | 1 | cannot connect (host down, VPN, tunnel); `tmvp check`, `tmvp <env> <tunnel> status` |
+| `auth_error` | 1 | credential rejected; tmvp already refetched secrets and retried once |
+| `unsupported` | 1 | missing CLI (aws/gcloud/az/git/playwright-cli) or feature |
+| `config_error` | 2 | bad config; `tmvp validate` |
+| `usage` | 2 | bad arguments; `<command> --llmhelp` |
+| `not_found` | 2 | no such env/system/verb/saved item/api; `tmvp systems`, `… ls` |
+| `secret_missing` | 2 | a `$(…)` command failed for that slot (no access); other systems still work |
+| `secret_invalid` | 2 | refetched value was rejected again; ask the user to rotate/fix access |
+| `login_required` | 2 | manual login needed — SHOW THE USER the command in the hint, they run it, then retry |
+| `policy_blocked` | 3 | read-only violation, missing `--reason`, destructive not allowed, multi-target write |
+| `too_expensive` | 3 | the read's estimate exceeds its timeout; it did not run. Narrow the query, or `--timeout <dur>`, or `--force` (`tmvp llms cost-and-timeouts`) |
+| `partial` | 4 | some envs failed; the rest of the results were printed |
+| `guard_rejected` | 5 | a guard cut it off (statement timeout, scan limit, byte cap) |

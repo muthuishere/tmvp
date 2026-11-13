@@ -1,0 +1,69 @@
+# Environments — which env a command runs on
+
+## Selection precedence (first wins)
+
+| # | Source | How | `env_source` |
+|---|---|---|---|
+| 1 | positional selector or `--env/-e` | `tmvp prod db ls`, `tmvp prod.db ls`, `tmvp -e prod db ls` | `explicit` |
+| 2 | `TMVP_ENV` | `export TMVP_ENV=staging` (one shell) | `TMVP_ENV` |
+| 3 | `tmvp use <env>` | persisted per product + config path | `use` |
+| 4 | `default_env:` in config.yaml | `default_env: dev` (top level) | `default` |
+| 5 | nothing set | the **first env** in config.yaml (`tmvp all …` for every env) | `default` |
+
+Giving the env both positionally and with `-e` (different values) is a usage error.
+
+## `tmvp use`
+
+```
+tmvp use            # print the active env and where it came from
+tmvp use dev        # persist dev for this product (TMVP_HOME/state/env.json, 0600)
+tmvp use prod       # allowed for any env; writes to prod still need --force
+tmvp use default    # forget it → default_env, else the first env (same as --clear)
+```
+
+The state is keyed by the canonical config path + product name, so two
+configs naming the same product never share a choice.
+
+## Batch is still first-class
+
+Name several envs and the same read runs on all of them in parallel:
+`tmvp all db ls`, `tmvp dev,prod db query "select 1" --diff`, `tmvp 'prod*' db health`,
+`tmvp '*.db' health`, `tmvp prod -l role=primary health`. An explicit selector always
+wins over `use`/default_env.
+
+## Output says where the env came from
+
+- text mode: a header on stderr — `# env: dev (source: use — tmvp use (…/env.json))`
+- `--json`: every frame carries `env` and `env_source`
+- the audit log records `env_source`, `env_selector` and `force` on every command and write
+
+## Writes and `--force`
+
+Writes run on exactly one env and one system (never batched). A **protected** env —
+`destructive: false`, the default, i.e. production — needs `--force` in addition to
+`--reason`, however the env was chosen (named, `-e`, `TMVP_ENV`, `use`, `default_env`).
+`--preview` needs no `--force` (it changes nothing).
+
+```
+tmvp write prod db "update …" --reason "fix #42" --preview
+tmvp write prod db "update …" --reason "fix #42" --force
+tmvp use dev && tmvp write db "update …" --reason "test data"   # dev has destructive: true
+```
+
+## Names
+
+An env named like a system, a verb or a tmvp command (`use`, `certs`, …) is rejected by
+`tmvp validate`, so `tmvp <word> …` is never ambiguous. `default_env` must name an env.
+
+## Env types — many envs of one kind
+
+```yaml
+envs:
+  dev-alice: { type: dev }          # dev/test/local: destructive allowed by default
+  staging:   { type: staging }      # staging and untyped envs: protected by default
+  prod-eu:   { type: production }   # prod: always protected; destructive: true is rejected
+  prod-us:   { type: production }
+```
+`type:` accepts common spellings and normalises them: production/prod/prd/live → `prod`; staging/stage/stg/uat/preprod/qa → `staging`; development/develop/dev → `dev`; test/testing/ci → `test`; `local`. Any other word is kept as a custom type. An explicit `destructive:` wins, except on a prod-type env.
+
+Select by type: `tmvp type:prod db query "select 1"`, or the bare type word when no env has that name (`tmvp prod db …` reads prod-eu and prod-us). Writes still take exactly one env.

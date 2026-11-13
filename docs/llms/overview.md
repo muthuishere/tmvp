@@ -1,0 +1,54 @@
+# tmvp overview
+
+Teams want one way to diagnose an issue across their products and environments. tmvp formalises that process: your coding agent (Claude, Codex, …) or an engineer looks into logs, runs database queries and inspects queues across dev, staging and prod — under a policy that keeps the systems up and the credentials untouched, from one simple configuration.
+
+- **Nothing goes down.** Reads run read-only (read-only transactions, method allowlists), with row caps and timeouts; a query estimated to run too long — the 2-hour scan that would stall production — is refused before it starts.
+- **No silent writes.** A read can never write. A write is only `tmvp write <env> <system> … --reason "…"`, one target, `--preview` first, `--force` on protected envs — and every write is in the audit log (`tmvp logs --writes`), so "who ran that UPDATE?" always has an answer.
+- **Credentials untouched.** Config holds references (`$dotenv(.env.prod, KEY)`, `${VAR}`, `$(secret-manager cmd)`); tmvp's local server resolves them. The agent sees names, never values.
+- **Batch across environments.** `tmvp all db query "…" --diff` runs once on every env and returns only what differs.
+- **Fast.** A background server keeps connection pools, ssh tunnels and fetched secrets alive between calls, and runs envs in parallel; an agent calling `psql`/`ssh` directly reconnects and re-authenticates every time (local demo: one call across 4 envs ≈ 17 ms vs ≈ 500 ms for four separate `psql` runs; the gap grows behind jump hosts).
+
+**Start simple, grow per repo.** tmvp works with just a config file (`~/.tmvp/<product>/config.yaml` or `--config`). When you want more, create a skill in each repo (`tmvp new skill <project>`, or let `/tmvp-discoverer` build it): config plus references and saved queries, so every agent working in that repo knows your environments and how to diagnose them.
+
+A product is described by a **skill**: a folder with `SKILL.md`, `config.yaml` (envs → named systems; secrets only as references) and `assets/` (saved queries, scripts, pages, apis).
+
+## Mental model
+- **Product** — one `config.yaml`. A skill can never reach another product.
+- **Env** — `dev`, `staging`, `prod`, … Each env has `destructive: true|false`.
+- **System** — a named thing in an env (`db`, `cluster`, `admin`) with a `type`
+  (postgres, k8s, web, …), fields, optional `labels` and `via` (tunnel chain).
+- **Verb** — what you can do to a system type (`query`, `get`, `logs`, `ls`, …). Every verb is
+  `read`, `write`, `destructive` or `read-write`.
+- **Reads** batch across envs in parallel. **Writes** go one env/system at a time through
+  `tmvp write … --reason`.
+
+## Discover everything from the CLI (start here)
+```
+tmvp envs                         # envs, destructive flag, system count
+tmvp systems [env]                # name, type, labels, via, login state (never secrets)
+tmvp <env> <system> ls            # what exists: tables, collections, prefixes, streams, pages, apis, saved items
+tmvp verbs [type]                 # every verb + mode, from the connector registry
+tmvp llms [topic] | --full        # these docs
+tmvp <any command> --llmhelp      # agent help for that exact command (works without config/server)
+```
+Do NOT pre-write schemas into a skill: ask the system with `ls`, `describe`, `collections`.
+
+## Grammar
+```
+tmvp [envsel] <system> <verb> [args]      envsel: prod | prod,staging | all | 'prod*'  (omitted = all)
+tmvp <env.system> <verb> [args]           prod.db | 'prod.*' | '*.db'
+tmvp <envsel> <verb> -l role=primary      every system matching the labels
+tmvp [envsel] <system> @name [args]       run a saved item (the type's @item verb)
+tmvp write <env> <system> <verb|stmt> [args] --reason "…" [--preview]
+```
+Global flags: `--skill <dir>`, `--config <file>`, `--json` (JSONL frames), `--diff`, `--limit N`,
+`--since 1h`, `--reason "…"`, `-l k=v`, `--timeout 60s`, `-F key=value` (connector flags),
+`--llmhelp`.
+
+## Output
+Rows are printed as `env.system  k=v  k=v`; with `--json` every line is a frame
+`{"type":"row|text|status|error|info","env":…,"system":…,"row":{…}}`. Some envs failing →
+exit 4 (`partial`) with the other envs' results still printed. See `tmvp llms errors`.
+
+Topics: install, config, writes, errors, server, skills, troubleshooting, and one per type
+(`tmvp llms postgres`, `tmvp llms web`, …).

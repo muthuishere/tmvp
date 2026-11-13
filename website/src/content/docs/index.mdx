@@ -1,0 +1,105 @@
+---
+title: T-mVp
+description: One connection to every system you run — postgres, k8s, clouds, logs, metrics, APIs, gRPC — across dev, staging and prod. Reads are enforced read-only; writes need a reason; secrets never reach the agent.
+template: splash
+head:
+  - tag: title
+    content: T-mVp — one connection, every system, every env
+hero:
+  title: Your agent, across every environment.
+  tagline: Give Claude, Codex or any coding agent one safe connection to your databases, clusters, logs and clouds. It runs the same query on dev1, dev2, staging and prod in one call and shows only the differences. Read-only by default; secrets never reach the agent.
+  actions:
+    - text: Set up your agent
+      link: /start/quickstart/
+      icon: right-arrow
+    - text: How it works
+      link: /start/why/
+      variant: minimal
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Systems from '../../components/home/Systems.astro';
+import Wiring from '../../components/home/Wiring.astro';
+import AuditTicker from '../../components/home/AuditTicker.astro';
+import Install from '../../components/home/Install.astro';
+
+<Systems />
+
+<p class="tm-eyebrow"><b>01</b> In the terminal</p>
+
+## Calm in prod, in one line
+
+<div class="tm-panel tm-reveal">
+<Tabs>
+<TabItem label="Postgres">
+<pre class="tm-term not-content" aria-label="terminal"><span><span class="p">$</span> <span class="c">tmvp all db query "select count(*) from orders" --diff</span></span><span class="d"># env: all (source: explicit — command line)</span><span>dev.db      count=1204</span><span>staging.db  count=1204</span><span>prod.db     count=98731</span><span> </span><span><span class="p">$</span> <span class="c">tmvp prod db query "update orders set status='paid' where id=42"</span></span><span class="d"># env: prod (source: explicit — command line)</span><span class="bad">error: [prod.db] policy_blocked: read-only transaction: cannot execute UPDATE in a read-only transaction</span><span class="d"># exit 3 — a read can never write</span></pre>
+</TabItem>
+<TabItem label="Kubernetes logs">
+<pre class="tm-term not-content" aria-label="terminal"><span><span class="p">$</span> <span class="c">tmvp prod cluster logs deploy/api --since 15m --limit 200</span></span><span class="d"># env: prod (source: explicit — command line)</span><span>prod.cluster  GET /v1/orders 200 12ms</span><span>prod.cluster  GET /v1/orders/42 200 9ms</span><span>prod.cluster  POST /v1/checkout 502 upstream timeout</span><span class="d"># bounded tail: --since and --limit always apply</span></pre>
+</TabItem>
+<TabItem label="GitHub runs">
+<pre class="tm-term not-content" aria-label="terminal"><span><span class="p">$</span> <span class="c">tmvp prod gh runs --workflow deploy-prod --limit 3</span></span><span class="d"># env: prod (source: explicit — command line)</span><span>prod.gh  conclusion=success  headBranch=main  workflowName=deploy-prod</span><span>prod.gh  conclusion=failure  headBranch=main  workflowName=deploy-prod</span><span><span class="p">$</span> <span class="c">tmvp prod gh run-log 7 --failed</span></span><span class="d"># env: prod (source: explicit — command line)</span><span class="d"># only the failed steps, line-capped</span></pre>
+</TabItem>
+<TabItem label="gRPC">
+<pre class="tm-term not-content" aria-label="terminal"><span><span class="p">$</span> <span class="c">tmvp all api call shop.v1.OrderService/GetOrder '&#123;"id":"42"&#125;' --diff</span></span><span class="d"># env: all (source: explicit — command line)</span><span>staging.api  id=42  status=PAID</span><span>prod.api     id=42  status=REFUNDED</span><span class="d"># env: prod (source: explicit — command line)</span><span><span class="p">$</span> <span class="c">tmvp prod api call shop.v1.OrderService/CancelOrder '&#123;"id":"42"&#125;'</span></span><span class="d"># env: prod (source: explicit — command line)</span><span class="bad">error: [prod.api] policy_blocked: shop.v1.OrderService/CancelOrder is not a read method (read_methods: Get*,List*,Search*,Find*,Count*,Describe*,Check,Watch,Health*)</span><span class="d"># exit 3 — only Get*/List*/… (read_methods) run as reads</span></pre>
+</TabItem>
+<TabItem label="Write with --preview">
+<pre class="tm-term not-content" aria-label="terminal"><span><span class="p">$</span> <span class="c">tmvp write prod db "update orders set status='paid' where id=42" --reason "support #812" --force --preview</span></span><span class="d"># env: prod (source: explicit — command line)</span><span>prod.db  command=UPDATE 1  preview=true  rows_affected=1</span><span class="d"># rolled back: you saw the blast radius, nothing changed</span><span><span class="p">$</span> <span class="c">tmvp write prod db "update orders set status='paid' where id=42" --reason "support #812" --force</span></span><span class="d"># env: prod (source: explicit — command line)</span><span class="ok">prod.db  command=UPDATE 1  preview=false  rows_affected=1</span><span class="d"># one env, one system, a reason, an audit record</span></pre>
+</TabItem>
+</Tabs>
+</div>
+
+<p class="tm-fine">Output shapes are tmvp's own (`env.system  key=value`); the values are illustrative.</p>
+
+<p class="tm-eyebrow"><b>02</b> How a call travels</p>
+
+## One door, six promises behind it
+
+<div class="tm-cols not-content">
+<div class="tm-lede"><p>Teams want one way to diagnose an issue across their products and environments. tmvp formalises that process: your coding agent or an engineer looks into logs, runs database queries and inspects queues across dev, staging and prod, under a policy that keeps the systems up and the credentials untouched, from one simple configuration.</p><a class="tm-more" href="/concepts/local-server/">The local server →</a></div>
+<div class="tm-reveal"><Wiring /></div>
+</div>
+
+<div class="tm-grid not-content tm-reveal">
+<div><span class="n">01</span><h3>Nothing goes down</h3><p>Reads run read-only, with row caps and timeouts. A query estimated to run too long, the 2-hour scan that would stall production, is refused before it starts.</p><a class="tm-more" href="/concepts/limits-cost-timeouts/">Limits, cost, timeouts →</a></div>
+<div><span class="n">02</span><h3>No silent writes</h3><p>A read can never write. A write is <code>tmvp write … --reason</code>, one target, <code>--preview</code> first, <code>--force</code> on protected envs, and it lands in the audit log.</p><a class="tm-more" href="/concepts/reads-and-writes/">Reads, writes, destructive →</a></div>
+<div><span class="n">03</span><h3>Credentials untouched</h3><p>Config holds references: <code>$dotenv(.env.prod, KEY)</code>, <code>$&#123;VAR&#125;</code>, a secret manager command. The agent sees names, never values.</p><a class="tm-more" href="/secrets/how-it-works/">How secrets work →</a></div>
+<div><span class="n">04</span><h3>Batch across environments</h3><p><code>tmvp all db query "…" --diff</code> runs once on every env and returns only what differs.</p><a class="tm-more" href="/concepts/environments/">Environments →</a></div>
+<div><span class="n">05</span><h3>Fast</h3><p>A background server keeps connection pools, ssh tunnels and fetched secrets warm between calls and runs envs in parallel. Locally, one call across 4 envs takes about 17 ms; four separate <code>psql</code> runs take about 500 ms.</p><a class="tm-more" href="/concepts/local-server/">The local server →</a></div>
+<div><span class="n">06</span><h3>Start simple, grow per repo</h3><p>It works with just a config file. When you want more, create a skill in each repo, or let <code>/tmvp-discoverer</code> build it, so every agent there knows your environments.</p><a class="tm-more" href="/start/quickstart/">Quickstart →</a></div>
+</div>
+
+<p class="tm-eyebrow"><b>03</b> Before, and with tmvp</p>
+
+## What it replaces
+
+<p class="tm-split-intro not-content">Claude, Codex or any coding agent diagnoses an issue across dev1, dev2, staging, prod-eu and prod-us in one call — and gets back only what differs. Safely.</p>
+<div class="tm-split not-content tm-reveal" aria-label="Before, and with tmvp"><div class="tm-split-head"><span>Before</span><span>With tmvp</span></div><ul><li><span class="tm-before">your agent fires a query that would run for 2 hours on prod</span><span class="tm-after"><code>tmvp prod db query "select … from events"</code><small>the agent gets a refusal before anything runs: <code>too_expensive: prod.db est. ~42.0s (Seq Scan on events (~4.2M rows in table)) &gt; timeout 10s</code> — and the timeout still hard-kills anything that slips through</small></span></li><li><span class="tm-before">your agent runs UPDATE on prod, just like that</span><span class="tm-after"><code>tmvp prod db query "update orders set …"</code><small>the agent gets <code>policy_blocked: read-only transaction …</code> (exit 3); a change happens only when you ask, via <code>tmvp write … --reason</code></small></span></li><li><span class="tm-before">check dev1, dev2, staging, prod one by one</span><span class="tm-after"><code>tmvp all db query "select count(*) from orders" --diff</code><small>one call, every env, only the rows that differ — the agent reads the gap, not five result sets</small></span></li><li><span class="tm-before">your agent ssh-es into the box → docker exec → psql</span><span class="tm-after"><code>tmvp prod db query "select …"</code><small>your agent names the system; tmvp walks ssh → container and runs it read-only, row-capped, timed out</small></span></li><li><span class="tm-before">jump servers, AWS, Azure, k8s — a different login and CLI for each</span><span class="tm-after"><code>tmvp new skill acme  ·  /tmvp-discoverer</code><small>build a skill once; your agent diagnoses any environment of your app — <code>via:</code> jump servers, aws / az / gcp, k8s</small></span></li><li><span class="tm-before">kubectl contexts, one per env</span><span class="tm-after"><code>tmvp all cluster logs deploy/api --since 15m</code><small>the agent gets every env's logs in one call, bounded</small></span></li><li><span class="tm-before">secrets in .env, pasted into the agent's chat</span><span class="tm-after"><code>$file(sec get acme@production:DATABASE_URL --out $&#123;out&#125;)</code><small>config holds commands; values stay in the local server's memory and never reach the agent's context</small></span></li><li><span class="tm-before">“who ran that UPDATE?”</span><span class="tm-after"><code>tmvp logs --writes</code><small>every write by any agent: intent and outcome records, with the reason</small></span></li></ul></div>
+
+<p class="tm-eyebrow"><b>04</b> Audit</p>
+
+## Every call leaves a line
+
+<div class="tm-cols not-content">
+<div class="tm-lede"><p>One JSONL line per command, in OpenTelemetry log shape: env, system, verb, the calling agent, the cost estimate. Writes get an intent record before they run and an outcome record after, with the reason.</p><pre class="tm-mini">tmvp logs --since 1d
+tmvp logs --writes</pre><a class="tm-more" href="/concepts/audit-log/">Audit log →</a></div>
+<div class="tm-reveal"><AuditTicker /></div>
+</div>
+
+<p class="tm-eyebrow"><b>05</b> Install</p>
+
+## One static binary. No sudo.
+
+<div class="tm-cols not-content">
+<div class="tm-lede"><p>macOS, Linux and Windows, amd64 and arm64. Then <code>tmvp doctor</code> tells you what is installed and what you can connect to.</p><ul class="tm-chips"><li>macOS</li><li>Linux</li><li>Windows</li><li>one Go binary</li></ul></div>
+<div class="tm-reveal"><Install /></div>
+</div>
+
+<p class="tm-eyebrow"><b>06</b> Read next</p>
+
+<div class="tm-next not-content">
+<a href="/agent-skills/discoverer/"><b>/tmvp-discoverer</b><span>Agents onboard themselves: scans your repo, asks about projects, envs and systems, writes a skill per project.</span></a>
+<a href="/start/why/"><b>Why T-mVp</b><span>Common operational problems, and the foundations underneath.</span></a>
+<a href="/start/quickstart/"><b>Quickstart</b><span>A skill, two systems, a read across envs, a previewed write.</span></a>
+<a href="/security/model/"><b>Security model</b><span>What tmvp enforces, and what it will never do.</span></a>
+</div>

@@ -1,0 +1,52 @@
+# tmvp
+
+> tmvp is one CLI that lets an agent read — and, when the user asks, change — every system of one product (postgres, mysql, mongo, redis, nats, kafka, k8s, ssh, scripts, web apps, HTTP APIs (OpenAPI), gRPC, prometheus, loki, grafana, elasticsearch/opensearch, git, gh, aws, gcp, az) across all its environments at once. Reads batch across envs; writes go one target at a time via `tmvp write … --reason`; secrets are `$(commands)` and never leave the local server's memory.
+
+Learn from the CLI itself: `tmvp envs`, `tmvp systems`, `tmvp <env> <system> ls`, `tmvp verbs [type]`, `tmvp llms [topic]`, and `--llmhelp` on any command. Every topic below prints with `tmvp llms <topic>`; `tmvp llms --full` prints everything.
+
+## Docs
+
+- [overview](docs/llms/overview.md): mental model, discovery commands, grammar, output
+- [install](docs/llms/install.md): install the binary, external CLIs, first skill
+- [config](docs/llms/config.md): config.yaml — vars, secrets, $(…), $file(…), ${file:…}, ${X:-d}, labels, via, login, limits, assets paths
+- [writes](docs/llms/writes.md): read vs write vs destructive, --reason, --preview, guards, audit
+- [cost-and-timeouts](docs/llms/cost-and-timeouts.md): read cost guard — estimate before run, too_expensive, --timeout precedence, --force, per-type estimators
+- [errors](docs/llms/errors.md): error codes and exit codes, what to do for each
+- [server](docs/llms/server.md): the auto-started local server, env vars, lifecycle
+- [skills](docs/llms/skills.md): building a skill on tmvp — layout, saved items, good and bad practice
+- [environment-variables](docs/llms/environment-variables.md): secrets from .env files ($dotenv) and env vars; TMVP_* settings
+- [secret-managers](docs/llms/secret-managers.md): sec, LastPass, 1Password, Bitwarden, Vault, AWS/GCP/Azure, Doppler — install + config line
+- [why-fast](docs/llms/why-fast.md): skill shape with a daemon behind it — vs plain skills and MCP servers
+- [examples](docs/llms/examples.md): three agent incidents across environments, with and without tmvp (times, password leaks)
+- [troubleshooting](docs/llms/troubleshooting.md): symptom → fix
+- [environments](docs/llms/environments.md): which env runs — positional/-e > TMVP_ENV > `tmvp use` > default_env > all; batch; --force on protected writes
+- [secrets](docs/llms/secrets.md): `tmvp secrets status|audit`, `tmvp certs` — secret health, value-changed, cert expiry (never values)
+- [logs-and-metrics](docs/llms/logs-and-metrics.md): where are my logs/metrics (OpenTelemetry lands in loki/prometheus/elasticsearch/grafana/cloud logs) → which tmvp type + verb
+- [doctor](docs/llms/doctor.md): `tmvp doctor` — installed tools, server, supported types, per-system secrets/login/connectivity, top fixes
+
+## System types
+
+- [aws](docs/llms/types/aws.md): fields, verbs (read/write/destructive), discovery, examples
+- [az](docs/llms/types/az.md): fields, verbs (read/write/destructive), discovery, examples
+- [elasticsearch](docs/llms/types/elasticsearch.md): fields, verbs (read/write/destructive), discovery, examples
+- [gcp](docs/llms/types/gcp.md): fields, verbs (read/write/destructive), discovery, examples
+- [git](docs/llms/types/git.md): fields, verbs (read/write/destructive), discovery, examples
+- [gh](docs/llms/types/gh.md): fields, verbs (read/write/destructive), discovery, examples
+- [grafana](docs/llms/types/grafana.md): fields, verbs (read/write/destructive), discovery, examples
+- [examples](docs/llms/examples.md): three agent incidents with and without tmvp (times, leaks)
+- [grpc](docs/llms/types/grpc.md): fields, verbs (read/write/destructive), discovery, examples
+- [http](docs/llms/types/http.md): fields, verbs (read/write/destructive), discovery, examples
+- [k8s](docs/llms/types/k8s.md): fields, verbs (read/write/destructive), discovery, examples
+- [kafka](docs/llms/types/kafka.md): fields, verbs (read/write/destructive), discovery, examples
+- [loki](docs/llms/types/loki.md): fields, verbs (read/write/destructive), discovery, examples
+- [mongo](docs/llms/types/mongo.md): fields, verbs (read/write/destructive), discovery, examples
+- [mysql](docs/llms/types/mysql.md): fields, verbs (read/write/destructive), discovery, examples
+- [nats](docs/llms/types/nats.md): fields, verbs (read/write/destructive), discovery, examples
+- [opensearch](docs/llms/types/opensearch.md): fields, verbs (read/write/destructive), discovery, examples
+- [portforward](docs/llms/types/portforward.md): fields, verbs (read/write/destructive), discovery, examples
+- [postgres](docs/llms/types/postgres.md): fields, verbs (read/write/destructive), discovery, examples
+- [prometheus](docs/llms/types/prometheus.md): fields, verbs (read/write/destructive), discovery, examples
+- [redis](docs/llms/types/redis.md): fields, verbs (read/write/destructive), discovery, examples
+- [script](docs/llms/types/script.md): fields, verbs (read/write/destructive), discovery, examples
+- [ssh](docs/llms/types/ssh.md): fields, verbs (read/write/destructive), discovery, examples
+- [web](docs/llms/types/web.md): fields, verbs (read/write/destructive), discovery, examples

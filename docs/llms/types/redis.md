@@ -1,0 +1,34 @@
+# redis
+
+Redis. Only read commands on reads; SCAN is bounded (never KEYS).
+
+## Fields
+url (secret redis:// or rediss://) or read.url/write.url; optional password, tls, tls_server_name
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [-F sep=:] — key prefixes from a bounded SCAN sample (≤5000 keys), with counts and dbsize |
+| `info` | read | info [section] → key/value rows |
+| `get` | read | get <key> (string values; other types → use type) |
+| `scan` | read | scan [pattern] [-F type=hash] (bounded SCAN, never KEYS) |
+| `ttl` | read | ttl <key> |
+| `type` | read | type <key> |
+| `set` | write | set <key> <value> [ttl e.g. 10m] |
+| `del` | write | del <key> [key...] (literal keys, no patterns) |
+| `expire` | write | expire <key> <ttl e.g. 1h> |
+| `flushdb` | destructive | flushdb (destructive) |
+| `flushall` | destructive | flushall (destructive) |
+<!-- END verbs -->
+
+## Discovery
+`ls [-F sep=:]` = dbsize + key prefixes (count, example) from a bounded SCAN sample (≤5000 keys); values are never read.
+
+## Examples
+```
+tmvp all cache ls
+tmvp prod cache scan "session:*" --limit 20
+tmvp prod cache ttl session:42
+tmvp write prod cache del session:42 --reason "force logout"
+```

@@ -1,0 +1,80 @@
+---
+// A simulated audit feed in tmvp's own shape (env.system, verb, kind, agent).
+// Rows are illustrative and labelled so. Static rows render first (no JS needed);
+// the script then keeps the feed moving while it is on screen.
+const seed = [
+	['prod', 'db', 'query', 'read', 'claude', '12 ms'],
+	['all', 'cluster', 'logs', 'read', 'codex', '340 ms'],
+	['prod', 'db', 'query', 'blocked', 'claude', 'exit 3'],
+	['staging', 'gh', 'runs', 'read', 'you', '210 ms'],
+	['prod', 'db', 'write', 'preview', 'you', 'rolled back'],
+	['prod', 'metrics', 'query', 'read', 'claude', '48 ms'],
+	['all', 'api', 'call', 'read', 'codex', '31 ms'],
+	['prod', 'db', 'write', 'write', 'you', '1 row'],
+];
+---
+
+<div class="tm-ticker not-content" data-tm-ticker>
+	<div class="tm-ticker-head">
+		<span><b>tmvp logs</b> · simulated</span>
+		<span class="tm-legend"><i class="read">read</i><i class="preview">preview</i><i class="write">write</i><i class="blocked">blocked</i></span>
+	</div>
+	<ol class="tm-ticker-rows" aria-live="off">
+		{seed.map(([env, sys, verb, kind, agent, res]) => (
+			<li><span class="e">{env}.{sys}</span><span class="v">{verb}</span><span class={`k ${kind}`}>{kind}</span><span class="g">{agent}</span><span class="r">{res}</span></li>
+		))}
+	</ol>
+	<div class="tm-ticker-stats">
+		<div><b data-n="reads">1 284</b><small>reads today</small></div>
+		<div><b data-n="writes">7</b><small>writes, each with a reason</small></div>
+		<div><b data-n="blocked">23</b><small>blocked by policy</small></div>
+		<div><b class="zero">0</b><small>secret values shown to an agent</small></div>
+	</div>
+</div>
+
+<script>
+	type Row = [string, string, string, string, string, string];
+	const POOL: Row[] = [
+		['prod', 'db', 'query', 'read', 'claude', '12 ms'],
+		['dev', 'db', 'query', 'read', 'codex', '4 ms'],
+		['all', 'db', 'query --diff', 'read', 'claude', '61 ms'],
+		['prod', 'cluster', 'logs', 'read', 'codex', '290 ms'],
+		['prod', 'cluster', 'pods', 'read', 'claude', '88 ms'],
+		['staging', 'kafka', 'tail', 'read', 'you', '140 ms'],
+		['prod', 'logs', 'query', 'read', 'claude', '76 ms'],
+		['prod', 'metrics', 'query', 'read', 'codex', '39 ms'],
+		['prod', 'gh', 'run-log --failed', 'read', 'claude', '410 ms'],
+		['all', 'api', 'call GetOrder', 'read', 'codex', '28 ms'],
+		['prod', 'api', 'call CancelOrder', 'blocked', 'codex', 'exit 3'],
+		['prod', 'db', 'query update…', 'blocked', 'claude', 'exit 3'],
+		['prod', 'db', 'write --preview', 'preview', 'you', 'rolled back'],
+		['prod', 'db', 'write', 'write', 'you', '1 row'],
+		['staging', 'redis', 'get', 'read', 'claude', '2 ms'],
+		['prod', 'aws', 'logs', 'read', 'codex', '520 ms'],
+	];
+	const MAX = 8;
+	document.querySelectorAll<HTMLElement>('[data-tm-ticker]').forEach((root) => {
+		if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+		const list = root.querySelector('ol')!;
+		const n = (k: string) => root.querySelector<HTMLElement>(`[data-n="${k}"]`)!;
+		const counts: Record<string, number> = { reads: 1284, writes: 7, blocked: 23 };
+		let timer = 0;
+		const tick = () => {
+			const [env, sys, verb, kind, agent, res] = POOL[(Math.random() * POOL.length) | 0];
+			const li = document.createElement('li');
+			li.className = 'in';
+			li.innerHTML = `<span class="e">${env}.${sys}</span><span class="v">${verb}</span><span class="k ${kind}">${kind}</span><span class="g">${agent}</span><span class="r">${res}</span>`;
+			list.prepend(li);
+			while (list.children.length > MAX) list.lastElementChild!.remove();
+			const key = kind === 'read' ? 'reads' : kind === 'blocked' ? 'blocked' : kind === 'write' ? 'writes' : '';
+			if (key) {
+				counts[key]++;
+				n(key).textContent = counts[key].toLocaleString('en-US').replace(/,/g, ' ');
+			}
+		};
+		new IntersectionObserver(([e]) => {
+			clearInterval(timer);
+			if (e.isIntersecting) timer = window.setInterval(tick, 900);
+		}).observe(root);
+	});
+</script>

@@ -1,0 +1,40 @@
+---
+// Header title, the released version as a pill linking to the changelog, plus a burger that collapses the left sidebar on desktop
+// (Starlight only offers that on mobile). State is remembered per visitor; the
+// attribute is set before first paint by the inline script in astro.config.mjs.
+import Default from '@astrojs/starlight/components/SiteTitle.astro';
+
+// set at build time in astro.config.mjs from the latest release tag
+const version = import.meta.env.TMVP_VERSION as string;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const href = import.meta.env.TMVP_HAS_CHANGELOG ? `${base}/reference/changelog/` : undefined;
+---
+
+<div class="tm-title sl-flex">
+	<button class="tm-burger" type="button" aria-controls="starlight__sidebar" aria-expanded="true" aria-label="Hide sidebar" title="Toggle sidebar" data-tm-burger>
+		<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+	</button>
+	<Default><slot /></Default>
+	{version && (href
+		? <a class="tm-ver" href={href} aria-label={`Release ${version}: changelog`}>{version}</a>
+		: <span class="tm-ver">{version}</span>)}
+</div>
+
+<script>
+	const root = document.documentElement;
+	const sync = (b: HTMLButtonElement) => {
+		const open = root.dataset.tmSidebar !== 'closed';
+		b.setAttribute('aria-expanded', String(open));
+		b.setAttribute('aria-label', open ? 'Hide sidebar' : 'Show sidebar');
+	};
+	document.querySelectorAll<HTMLButtonElement>('[data-tm-burger]').forEach((b) => {
+		sync(b);
+		b.addEventListener('click', () => {
+			const close = root.dataset.tmSidebar !== 'closed';
+			if (close) root.dataset.tmSidebar = 'closed';
+			else delete root.dataset.tmSidebar;
+			try { localStorage.setItem('tm-sidebar', close ? 'closed' : 'open'); } catch { /* private mode: works for this page only */ }
+			sync(b);
+		});
+	});
+</script>

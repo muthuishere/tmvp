@@ -1,0 +1,34 @@
+version: '3'
+vars:
+  BIN: bin/tmvp
+env:
+  CGO_ENABLED: '0'
+tasks:
+  build:
+    cmds: ['go build -trimpath -ldflags="-s -w" -o {{.BIN}} ./cmd/tmvp']
+  test:
+    cmds: ['go test ./...']
+  vet:
+    cmds: ['go vet ./...']
+  fmt:
+    cmds: ['gofmt -w .']
+  check:
+    deps: [vet, test]
+  cross:
+    desc: build all 6 OS/arch targets
+    cmds:
+      - for: ['darwin/amd64', 'darwin/arm64', 'linux/amd64', 'linux/arm64', 'windows/amd64', 'windows/arm64']
+        cmd: 'GOOS={{splitList "/" .ITEM | first}} GOARCH={{splitList "/" .ITEM | last}} go build -trimpath -ldflags="-s -w" -o dist/tmvp_{{replace "/" "_" .ITEM}} ./cmd/tmvp'
+  install:
+    cmds: ['go install ./cmd/tmvp']
+  # live secrets only via sec, e.g.: sec run TMVP_TEST_PG_DSN -- task test:pg
+  test:pg:
+    cmds: ['go test ./connectors/postgres/... -run Live -count=1 -v']
+  docs:dev:
+    desc: docs site (Astro Starlight) with live reload
+    dir: website
+    cmds: ['bun install', 'bun run dev']
+  docs:build:
+    desc: build the docs site into website/dist
+    dir: website
+    cmds: ['bun install', 'bun run build']

@@ -1,0 +1,21 @@
+---
+// Every connector type, as one slow strip. Each chip links to its page.
+const systems = [
+	'postgres', 'mysql', 'mongo', 'redis', 'kafka', 'nats', 'elasticsearch', 'opensearch',
+	'k8s', 'ssh', 'portforward', 'aws', 'gcp', 'az', 'prometheus', 'loki', 'grafana',
+	'gh', 'git', 'grpc', 'http', 'web', 'script',
+];
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<div class="tm-marquee not-content" aria-label="Supported system types">
+	<div class="tm-marquee-track">
+		{[0, 1].map((copy) => (
+			<ul aria-hidden={copy === 1 ? 'true' : undefined}>
+				{systems.map((s) => (
+					<li><a href={`${base}/systems/${s}/`} tabindex={copy === 1 ? -1 : undefined}>{s}</a></li>
+				))}
+			</ul>
+		))}
+	</div>
+</div>

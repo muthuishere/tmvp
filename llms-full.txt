@@ -1,0 +1,1530 @@
+# tmvp
+
+> tmvp is one CLI that lets an agent read — and, when the user asks, change — every system of one product (postgres, mysql, mongo, redis, nats, kafka, k8s, ssh, scripts, web apps, HTTP APIs (OpenAPI), gRPC, prometheus, loki, grafana, elasticsearch/opensearch, git, gh, aws, gcp, az) across all its environments at once. Reads batch across envs; writes go one target at a time via `tmvp write … --reason`; secrets are `$(commands)` and never leave the local server's memory.
+
+Learn from the CLI itself: `tmvp envs`, `tmvp systems`, `tmvp <env> <system> ls`, `tmvp verbs [type]`, `tmvp llms [topic]`, and `--llmhelp` on any command. Every topic below prints with `tmvp llms <topic>`; `tmvp llms --full` prints everything.
+
+## Docs
+
+- [overview](docs/llms/overview.md): mental model, discovery commands, grammar, output
+- [install](docs/llms/install.md): install the binary, external CLIs, first skill
+- [config](docs/llms/config.md): config.yaml — vars, secrets, $(…), $file(…), ${file:…}, ${X:-d}, labels, via, login, limits, assets paths
+- [writes](docs/llms/writes.md): read vs write vs destructive, --reason, --preview, guards, audit
+- [cost-and-timeouts](docs/llms/cost-and-timeouts.md): read cost guard — estimate before run, too_expensive, --timeout precedence, --force, per-type estimators
+- [errors](docs/llms/errors.md): error codes and exit codes, what to do for each
+- [server](docs/llms/server.md): the auto-started local server, env vars, lifecycle
+- [skills](docs/llms/skills.md): building a skill on tmvp — layout, saved items, good and bad practice
+- [environment-variables](docs/llms/environment-variables.md): secrets from .env files ($dotenv) and env vars; TMVP_* settings
+- [secret-managers](docs/llms/secret-managers.md): sec, LastPass, 1Password, Bitwarden, Vault, AWS/GCP/Azure, Doppler — install + config line
+- [why-fast](docs/llms/why-fast.md): skill shape with a daemon behind it — vs plain skills and MCP servers
+- [examples](docs/llms/examples.md): three agent incidents across environments, with and without tmvp (times, password leaks)
+- [troubleshooting](docs/llms/troubleshooting.md): symptom → fix
+- [environments](docs/llms/environments.md): which env runs — positional/-e > TMVP_ENV > `tmvp use` > default_env > all; batch; --force on protected writes
+- [secrets](docs/llms/secrets.md): `tmvp secrets status|audit`, `tmvp certs` — secret health, value-changed, cert expiry (never values)
+- [logs-and-metrics](docs/llms/logs-and-metrics.md): where are my logs/metrics (OpenTelemetry lands in loki/prometheus/elasticsearch/grafana/cloud logs) → which tmvp type + verb
+- [doctor](docs/llms/doctor.md): `tmvp doctor` — installed tools, server, supported types, per-system secrets/login/connectivity, top fixes
+
+## System types
+
+- [aws](docs/llms/types/aws.md): fields, verbs (read/write/destructive), discovery, examples
+- [az](docs/llms/types/az.md): fields, verbs (read/write/destructive), discovery, examples
+- [elasticsearch](docs/llms/types/elasticsearch.md): fields, verbs (read/write/destructive), discovery, examples
+- [gcp](docs/llms/types/gcp.md): fields, verbs (read/write/destructive), discovery, examples
+- [git](docs/llms/types/git.md): fields, verbs (read/write/destructive), discovery, examples
+- [gh](docs/llms/types/gh.md): fields, verbs (read/write/destructive), discovery, examples
+- [grafana](docs/llms/types/grafana.md): fields, verbs (read/write/destructive), discovery, examples
+- [examples](docs/llms/examples.md): three agent incidents with and without tmvp (times, leaks)
+- [grpc](docs/llms/types/grpc.md): fields, verbs (read/write/destructive), discovery, examples
+- [http](docs/llms/types/http.md): fields, verbs (read/write/destructive), discovery, examples
+- [k8s](docs/llms/types/k8s.md): fields, verbs (read/write/destructive), discovery, examples
+- [kafka](docs/llms/types/kafka.md): fields, verbs (read/write/destructive), discovery, examples
+- [loki](docs/llms/types/loki.md): fields, verbs (read/write/destructive), discovery, examples
+- [mongo](docs/llms/types/mongo.md): fields, verbs (read/write/destructive), discovery, examples
+- [mysql](docs/llms/types/mysql.md): fields, verbs (read/write/destructive), discovery, examples
+- [nats](docs/llms/types/nats.md): fields, verbs (read/write/destructive), discovery, examples
+- [opensearch](docs/llms/types/opensearch.md): fields, verbs (read/write/destructive), discovery, examples
+- [portforward](docs/llms/types/portforward.md): fields, verbs (read/write/destructive), discovery, examples
+- [postgres](docs/llms/types/postgres.md): fields, verbs (read/write/destructive), discovery, examples
+- [prometheus](docs/llms/types/prometheus.md): fields, verbs (read/write/destructive), discovery, examples
+- [redis](docs/llms/types/redis.md): fields, verbs (read/write/destructive), discovery, examples
+- [script](docs/llms/types/script.md): fields, verbs (read/write/destructive), discovery, examples
+- [ssh](docs/llms/types/ssh.md): fields, verbs (read/write/destructive), discovery, examples
+- [web](docs/llms/types/web.md): fields, verbs (read/write/destructive), discovery, examples
+
+
+---
+<!-- docs/llms/overview.md -->
+
+# tmvp overview
+
+Teams want one way to diagnose an issue across their products and environments. tmvp formalises that process: your coding agent (Claude, Codex, …) or an engineer looks into logs, runs database queries and inspects queues across dev, staging and prod — under a policy that keeps the systems up and the credentials untouched, from one simple configuration.
+
+- **Nothing goes down.** Reads run read-only (read-only transactions, method allowlists), with row caps and timeouts; a query estimated to run too long — the 2-hour scan that would stall production — is refused before it starts.
+- **No silent writes.** A read can never write. A write is only `tmvp write <env> <system> … --reason "…"`, one target, `--preview` first, `--force` on protected envs — and every write is in the audit log (`tmvp logs --writes`), so "who ran that UPDATE?" always has an answer.
+- **Credentials untouched.** Config holds references (`$dotenv(.env.prod, KEY)`, `${VAR}`, `$(secret-manager cmd)`); tmvp's local server resolves them. The agent sees names, never values.
+- **Batch across environments.** `tmvp all db query "…" --diff` runs once on every env and returns only what differs.
+- **Fast.** A background server keeps connection pools, ssh tunnels and fetched secrets alive between calls, and runs envs in parallel; an agent calling `psql`/`ssh` directly reconnects and re-authenticates every time (local demo: one call across 4 envs ≈ 17 ms vs ≈ 500 ms for four separate `psql` runs; the gap grows behind jump hosts).
+
+**Start simple, grow per repo.** tmvp works with just a config file (`~/.tmvp/<product>/config.yaml` or `--config`). When you want more, create a skill in each repo (`tmvp new skill <project>`, or let `/tmvp-discoverer` build it): config plus references and saved queries, so every agent working in that repo knows your environments and how to diagnose them.
+
+A product is described by a **skill**: a folder with `SKILL.md`, `config.yaml` (envs → named systems; secrets only as references) and `assets/` (saved queries, scripts, pages, apis).
+
+## Mental model
+- **Product** — one `config.yaml`. A skill can never reach another product.
+- **Env** — `dev`, `staging`, `prod`, … Each env has `destructive: true|false`.
+- **System** — a named thing in an env (`db`, `cluster`, `admin`) with a `type`
+  (postgres, k8s, web, …), fields, optional `labels` and `via` (tunnel chain).
+- **Verb** — what you can do to a system type (`query`, `get`, `logs`, `ls`, …). Every verb is
+  `read`, `write`, `destructive` or `read-write`.
+- **Reads** batch across envs in parallel. **Writes** go one env/system at a time through
+  `tmvp write … --reason`.
+
+## Discover everything from the CLI (start here)
+```
+tmvp envs                         # envs, destructive flag, system count
+tmvp systems [env]                # name, type, labels, via, login state (never secrets)
+tmvp <env> <system> ls            # what exists: tables, collections, prefixes, streams, pages, apis, saved items
+tmvp verbs [type]                 # every verb + mode, from the connector registry
+tmvp llms [topic] | --full        # these docs
+tmvp <any command> --llmhelp      # agent help for that exact command (works without config/server)
+```
+Do NOT pre-write schemas into a skill: ask the system with `ls`, `describe`, `collections`.
+
+## Grammar
+```
+tmvp [envsel] <system> <verb> [args]      envsel: prod | prod,staging | all | 'prod*'  (omitted = all)
+tmvp <env.system> <verb> [args]           prod.db | 'prod.*' | '*.db'
+tmvp <envsel> <verb> -l role=primary      every system matching the labels
+tmvp [envsel] <system> @name [args]       run a saved item (the type's @item verb)
+tmvp write <env> <system> <verb|stmt> [args] --reason "…" [--preview]
+```
+Global flags: `--skill <dir>`, `--config <file>`, `--json` (JSONL frames), `--diff`, `--limit N`,
+`--since 1h`, `--reason "…"`, `-l k=v`, `--timeout 60s`, `-F key=value` (connector flags),
+`--llmhelp`.
+
+## Output
+Rows are printed as `env.system  k=v  k=v`; with `--json` every line is a frame
+`{"type":"row|text|status|error|info","env":…,"system":…,"row":{…}}`. Some envs failing →
+exit 4 (`partial`) with the other envs' results still printed. See `tmvp llms errors`.
+
+Topics: install, config, writes, errors, server, skills, troubleshooting, and one per type
+(`tmvp llms postgres`, `tmvp llms web`, …).
+
+
+---
+<!-- docs/llms/install.md -->
+
+# Install tmvp
+
+One static binary per OS/arch (macOS, Linux, Windows; amd64 + arm64; `CGO_ENABLED=0`). Install it
+once per machine; every product skill on the machine shares it and its warm local server.
+
+```
+go install github.com/muthuishere/tmvp/cmd/tmvp@latest      # from source (Go 1.26)
+# or in a checkout:
+task build        # → bin/tmvp
+task cross        # all 6 OS/arch builds → dist/
+tmvp version      # version, protocol, registered connector types
+```
+
+External CLIs are only needed for the types that drive them, resolved from PATH:
+`aws` (aws), `gcloud` (gcp), `az` (az), `git` (git), `playwright-cli` (web browser verbs:
+`npm install -g @playwright/cli && playwright-cli install-browser`). Your secret manager's CLI
+(`sec`, `op`, `lpass`, `gcloud`, `aws` …) runs the `$(…)` commands in config.
+
+## First skill
+```
+tmvp new skill acme --systems db:postgres,cluster:k8s,admin:web --envs dev,staging,prod
+# → .agents/skills/acme-tmvp/{SKILL.md, config.yaml, assets/}
+# fill the $file(sec get REPLACE_ME_… --out ${out}) slots and REPLACE_ME fields, then:
+tmvp --skill .agents/skills/acme-tmvp validate
+tmvp --skill .agents/skills/acme-tmvp skill lint
+tmvp --skill .agents/skills/acme-tmvp check
+```
+`tmvp skill add <name> <type> [--env prod]` adds a system later; `tmvp skill sync` regenerates
+SKILL.md from config.yaml.
+
+
+---
+<!-- docs/llms/config.md -->
+
+# config.yaml
+
+Holds NO secret values — only commands that fetch them — so it lives next to the skill in git.
+
+## Lookup order (first found wins; `--config` / `--skill` override)
+1. `./.tmvp/config.yaml` (walking up from the cwd) · 2. the skill dir (`.agents/skills/<product>-tmvp/`)
+3. `~/.tmvp/<product>/config.yaml` · 4. `~/.tmvp/config.yaml`. `tmvp config path` prints the pick.
+
+## Shape
+```yaml
+version: 1
+product: acme
+assets: [assets, ../ops-repo/tmvp-assets]   # asset roots, searched in order (default [assets])
+logging: { sink: file, path: ~/.tmvp/acme/logs }
+server: { idle: 30m }
+vars:    { region: ap-south-1 }              # ${vars.region}
+secrets:                                     # named, lazy, held in server memory only
+  ssh_key: "$file(sec get ACME_SSH_KEY --out ${out})"
+envs:
+  prod:
+    destructive: false
+    vars:    { domain: acme.com }            # env overrides top-level
+    secrets: { db_ro: "$(op read op://Acme/prod-db/ro-dsn)" }
+    systems:
+      bastion:   { type: ssh, host: bastion.internal.example, user: deploy, key: "${file:secrets.ssh_key}" }
+      db-tunnel: { type: portforward, via: bastion, remote: db.internal:5432 }
+      db:
+        type: postgres
+        via: db-tunnel
+        labels: { role: primary }
+        read:  { dsn: "${secrets.db_ro}" }
+        write: { dsn: "$file(sec get ACME_PROD_DB_RW --out ${out})" }   # inline $(…) is fine too
+        limits: { rows: 500, statement_timeout: 10s }
+      cloud:
+        type: gcp
+        project: acme-prod
+        login: { manual: "gcloud auth login", check: "gcloud auth print-access-token" }
+```
+
+## Interpolation (after YAML parsing, per field — a value can never change structure)
+| Form | Meaning |
+|---|---|
+| `${vars.x}` | var (env vars override top-level) |
+| `${secrets.x}` | named secret (env overrides top-level) |
+| `${file:secrets.x}` | the secret as a FILE (whole field only): connectors get bytes in memory; external CLIs get a memfd (Linux) or 0600 temp file for that call only |
+| `${NAME}` / `${NAME:-default}` | process environment variable, with default |
+| `${user.x}` | left verbatim for web login steps (the named user's field) |
+| `$$` | a literal `$` |
+
+## Secrets are commands
+- `"$(cmd args)"` — run (argv, no shell; `sh -c` only when it needs pipes), stdout captured in memory.
+- `"$file(cmd --out ${out})"` — the command writes the private path `${out}`; tmvp reads and deletes it.
+- A command may print `{"value":"…","expires_at":"RFC3339"}`; tmvp refetches before expiry.
+- Run lazily on first use, held in the server's memory, redacted from all output. Refetched when the
+  config changes or a credential is rejected (retried once; same value → `secret_invalid`).
+- Literal values are rejected by `tmvp validate` in secret-ish fields: `dsn password passwd token key
+  creds kubeconfig credentials secret uri api_key apikey private_key client_secret access_key
+  secret_key`, and any URL with `user:password@`.
+
+## Fields tmvp itself parses (per system)
+| Field | Meaning |
+|---|---|
+| `type` | connector type (required) — see `tmvp verbs` |
+| `labels` | free `key: value`; select with `-l role=primary,team!=x`, `-l 'role in (a,b)'` |
+| `via` | tunnel chain (ProxyJump semantics): `via: bastion` or `via: [jump1, db-tunnel]` — ssh, portforward or k8s systems in the same env; a docker container behind ssh: `via: [box, {container: pg}]` (`network:`, `sudo: true` optional; must follow an ssh hop, last) |
+| `login` | `{manual: "<cmd the USER runs>", check: "<non-interactive cmd>"}`, or `{manual: browser}` for web |
+| `destructive` | system-level override of the env flag |
+| `limits` | `{rows, lines, bytes, timeout, statement_timeout, cost_per_second, rows_per_second, bytes_per_second, points_per_second, seq_scan_rows}` (defaults 1000 rows, 500 lines, 1 MiB, 10s, 15s). Also allowed at top level and per env; `timeout` precedence: `--timeout` > system > env > global > 10s — see `tmvp llms cost-and-timeouts` |
+Everything else belongs to the type (`tmvp llms <type>`); `read.*` / `write.*` sub-maps hold the
+credential per mode (write mode never falls back to `read.*`).
+
+## Assets (saved items)
+`assets:` lists asset roots relative to config.yaml (`~` expands). Each root holds
+`<system>/<kind>/<name>.<ext>`: `queries/*.sql|*.json`, `scripts/*`, `pages/*.md` (+ `context.md`),
+`apis/*.md`, `manifests/*.yaml`, `notes/`. Lookup goes root by root — the first match wins — so a
+team repo can override a shared one. `tmvp <env> <system> ls` shows every item with its source file.
+Every saved item starts with YAML front-matter (`description:` at least); `tmvp skill lint` checks it.
+
+## Names
+Env and system names must not contain `. , * ? [` or spaces and must not collide with each other,
+with tmvp commands (`all write validate config check logs login secrets server version help new
+skill export completion verbs envs systems llms`) or with a verb. `tmvp validate` reports it.
+
+
+---
+<!-- docs/llms/writes.md -->
+
+# Writes & safety
+
+tmvp trusts the agent, and makes every change explicit and traceable.
+
+- **Reads** run on the `read:` credential in read-only sessions (pg/mysql `READ ONLY` tx, mongo
+  secondary reads, k8s GET-only transport, cloud read-op allow lists). A read verb that would mutate
+  → `policy_blocked` with a hint naming `tmvp write`. Make the read role unprivileged anyway: the
+  session flags are defence in depth.
+- **Writes**: only `tmvp write <env> <system> <verb|statement> [args] --reason "why"`.
+  One env, one system, never batched. `--reason` is mandatory. `--preview` shows the blast radius
+  where cheap (rolled-back transaction with rows affected, dry run, the request it would send).
+- A non-verb after the system goes to the type's **default write verb**: `tmvp write prod db
+  "update users set …"` → `exec`; `tmvp write prod bastion @rotate` → ssh `run @rotate`.
+- **Destructive** (DROP/TRUNCATE, DELETE/UPDATE without WHERE, empty mongo filters, flushdb, purge,
+  namespace delete, …) runs only where `destructive: true` (env or system).
+- **read-write verbs** (web click/fill/press/select/do, cloud `call`, http `call`) run as plain
+  reads only when they cannot mutate; through `tmvp write` they may.
+- **Cost guard** on every read: estimated first, refused with `too_expensive` when over its timeout (`tmvp llms cost-and-timeouts`).
+- **Guards** on every call: per-target timeout (always a hard kill, even with `--force`), statement timeout, row/line/byte caps, bounded
+  scans/consumes/tails. Cut-offs → `guard_rejected` (exit 5) or a `truncated` status.
+- **Audit**: every command is recorded (JSONL, OTel log shape) under the product's log dir;
+  `tmvp logs --writes` reads the write audit back.
+
+## Good
+```
+tmvp write prod db "update orders set status='paid' where id=42" --reason "support #812" --preview
+tmvp write prod db "update orders set status='paid' where id=42" --reason "support #812"
+tmvp write prod cluster scale deploy/api 4 --reason "traffic spike"
+tmvp write prod api call refund-order id=42 --reason "support #812"
+```
+## Bad
+- writing without the user asking; looping `tmvp write` over envs to "batch" a change
+- `--reason "fix"` — say what and why; it is the audit trail
+- putting the mutation in a read verb, or a secret value in an argument
+
+
+---
+<!-- docs/llms/errors.md -->
+
+# Errors & exit codes
+
+Errors print as `error: <code>: <message> (hint: …)`; with `--json` as
+`{"type":"error","error":{"code":…,"message":…,"hint":…}}`. Messages never contain secret values.
+
+| Code | Exit | Meaning / what to do |
+|---|---|---|
+| `runtime` | 1 | unexpected failure; read the message |
+| `timeout` | 1 | hard timeout hit (also with `--force`); narrow the query or raise `--timeout` / `limits.timeout` |
+| `unreachable` | 1 | cannot connect (host down, VPN, tunnel); `tmvp check`, `tmvp <env> <tunnel> status` |
+| `auth_error` | 1 | credential rejected; tmvp already refetched secrets and retried once |
+| `unsupported` | 1 | missing CLI (aws/gcloud/az/git/playwright-cli) or feature |
+| `config_error` | 2 | bad config; `tmvp validate` |
+| `usage` | 2 | bad arguments; `<command> --llmhelp` |
+| `not_found` | 2 | no such env/system/verb/saved item/api; `tmvp systems`, `… ls` |
+| `secret_missing` | 2 | a `$(…)` command failed for that slot (no access); other systems still work |
+| `secret_invalid` | 2 | refetched value was rejected again; ask the user to rotate/fix access |
+| `login_required` | 2 | manual login needed — SHOW THE USER the command in the hint, they run it, then retry |
+| `policy_blocked` | 3 | read-only violation, missing `--reason`, destructive not allowed, multi-target write |
+| `too_expensive` | 3 | the read's estimate exceeds its timeout; it did not run. Narrow the query, or `--timeout <dur>`, or `--force` (`tmvp llms cost-and-timeouts`) |
+| `partial` | 4 | some envs failed; the rest of the results were printed |
+| `guard_rejected` | 5 | a guard cut it off (statement timeout, scan limit, byte cap) |
+
+
+---
+<!-- docs/llms/server.md -->
+
+# The local server
+
+One binary, two roles. Every `tmvp` call is a thin client that talks over a unix socket to a
+per-user server which it auto-starts (detached) when needed. The server keeps per-product state:
+secrets (memory only), connection pools, tunnels, browser sessions, the audit writer.
+
+- `tmvp server status` — loaded products, connections, tunnels, secret slots (names only)
+- `tmvp server stop` — drop everything (all secrets and connections); `start` / `run` (foreground)
+- `tmvp secrets reload` — rerun the secret commands after a rotation; `tmvp secrets clear`
+- Idle shutdown after 30 min without a request (`server: { idle: 30m }` or `TMVP_IDLE`).
+- Config file changes are picked up on the next call (changed secrets refetched, affected pools rebuilt).
+- Socket `~/.tmvp/run/tmvp.sock` (0600, same-UID peers only; named-pipe fallback on old Windows).
+
+Environment: `TMVP_HOME` (state dir, default `~/.tmvp`), `TMVP_SOCKET` (socket path; keep it
+under 104 bytes on macOS), `TMVP_NO_SERVER=1` (run in-process, no socket — tests/CI),
+`TMVP_PRODUCT` (product for the lookup order), `TMVP_AGENT` (agent name in the audit).
+Commands that never need the server or a config: `--llmhelp`, `llms`, `verbs`, `version`,
+`new skill`, `skill lint`.
+
+
+---
+<!-- docs/llms/skills.md -->
+
+# Building a skill on tmvp
+
+A product skill is tiny and generated: `SKILL.md` is rendered from `config.yaml` by
+`tmvp new skill` / `tmvp skill add` / `tmvp skill sync` (product, envs, systems, rules, and how to
+learn the rest from tmvp). Everything else is discovered live or saved by people as assets.
+
+## Layout
+```
+.agents/skills/acme-tmvp/
+├── SKILL.md         # generated — do not hand-edit (sync rewrites it)
+├── config.yaml      # envs → systems; $(…) secret commands; assets: [roots…]
+└── assets/<system>/{queries,scripts,pages,apis,manifests,notes}/
+```
+Assets can come from several repos: `assets: [assets, ../platform/tmvp-assets]`. People keep adding
+to them; first match wins; `ls` shows each item's source.
+
+## Saved items — front-matter first, then the body
+```sql
+/*---
+description: paid orders without an invoice (last N days)
+params: [days]
+---*/
+select id, total from orders where status='paid' and invoice_id is null
+  and created_at > now() - ($1 || ' days')::interval
+```
+```markdown
+---
+method: GET
+path: /api/orders/{id}
+description: one order with lines
+params: [id]
+mutating: false
+---
+Returns 404 for archived orders.
+```
+ssh scripts declare `read: true` in front-matter; `script` type uses a `# tmvp: read` header.
+
+## Good practice
+- Let the agent discover: `tmvp envs`, `tmvp systems`, `tmvp all db ls`, `tmvp prod db describe orders`.
+- Save a query/script/api only after it proved useful; give it a precise `description`.
+- Keep notes short and factual in `assets/<system>/notes/` (gotchas, env differences).
+- Run `tmvp skill lint` before committing (structure, front-matter, no secret values).
+
+## Bad practice
+- Pre-writing table lists, schemas or endpoints from guesses — they rot. References must come from the code and be confirmed by live `ls`/`describe`; `ls` stays the source of truth.
+- Putting values in config (`password: hunter2`) — use `$(command)`; lint/validate reject literals.
+- Copying one product's systems into another skill — one skill = one product.
+- Saved items that mutate without saying so (mark `mutating: true`, or omit `read: true`).
+
+
+---
+<!-- docs/llms/troubleshooting.md -->
+
+# Troubleshooting
+
+| Symptom | Do |
+|---|---|
+| `no config found` | pass `--skill <dir>` or `--config <file>`; `tmvp config path` |
+| `"x" is neither an env nor a system` | `tmvp envs`, `tmvp systems` |
+| `unreachable` | VPN/tunnel? `tmvp <env> <tunnel> status`; `tmvp check <env> <system>` |
+| `secret_missing` | the `$(…)` command failed for you (no access/not logged in to the vault); fix access, `tmvp secrets reload` |
+| `login_required` | show the user the hint's command (e.g. `! gcloud auth login`, `tmvp login prod admin`), then retry |
+| `unsupported … not on PATH` | install the CLI (aws, gcloud, az, git, playwright-cli) |
+| `policy_blocked` | it mutates: use `tmvp write <env> <system> … --reason "…"` if the user asked |
+| `guard_rejected` / truncated | narrow the query, add filters, `--limit`, or raise `limits:` |
+| stale results after editing config | the server reloads on the next call; force with `tmvp server stop` |
+| saved item not found | `tmvp <env> <system> ls` shows which asset roots/items exist |
+| everything slow on first call | cold start: secrets run + connections open once, then warm |
+
+`tmvp check` validates the config, resolves secrets (names only) and connects to every selected
+system. `tmvp validate` and `tmvp skill lint` never run a secret command.
+
+
+---
+<!-- docs/llms/doctor.md -->
+
+# tmvp doctor
+
+One screen answering: what is installed, what can I connect to, what is broken. Works without a
+config (machine, tools and types only). Runs in-process — it never starts the server — and reports
+secret **names and states only**, never values or the commands that produce them.
+
+```
+tmvp doctor                                   # everything; config by lookup order if one exists
+tmvp doctor --offline                         # no secret commands, login checks or connections
+tmvp --skill .agents/skills/acme-tmvp doctor --env prod --system db
+tmvp doctor --json                            # JSONL rows, each with "section"
+```
+
+Sections:
+
+| Section | Shows |
+|---|---|
+| machine | tmvp version, OS/arch, `TMVP_HOME`, socket path + length check, server (pid, uptime, product names) |
+| tools | kubectl (optional), aws, gcloud, az, git, playwright-cli, and secret sources (sec, op, lpass, vault): found?, `--version` first line, which types need it; binaries the config's `$(…)` commands run are flagged when missing |
+| types | every registered type with read / write verb counts and whether it is built-in |
+| config / systems | per env × system: type known, secrets (ok / missing / invalid / unknown), login (ok / required + the command), via chain, connect (ok / failed + code) |
+| summary | problem count and the top 3 fixes with exact commands |
+
+Exit codes: `0` all good · `1` something failing (missing tool the config needs, login required,
+secret or connection failed) · `2` config problem (no/invalid config given, validation errors,
+unknown type).
+
+Fixes it suggests: `install playwright-cli: npm i -g @playwright/cli`, `install aws`,
+`run: gcloud auth login` (the system's `login.manual`), `set TMVP_SOCKET …`, `tmvp validate`.
+Use `tmvp check` for the server-side view (warm pools, cached secrets).
+
+
+---
+<!-- docs/llms/environments.md -->
+
+# Environments — which env a command runs on
+
+## Selection precedence (first wins)
+
+| # | Source | How | `env_source` |
+|---|---|---|---|
+| 1 | positional selector or `--env/-e` | `tmvp prod db ls`, `tmvp prod.db ls`, `tmvp -e prod db ls` | `explicit` |
+| 2 | `TMVP_ENV` | `export TMVP_ENV=staging` (one shell) | `TMVP_ENV` |
+| 3 | `tmvp use <env>` | persisted per product + config path | `use` |
+| 4 | `default_env:` in config.yaml | `default_env: dev` (top level) | `default` |
+| 5 | nothing set | the **first env** in config.yaml (`tmvp all …` for every env) | `default` |
+
+Giving the env both positionally and with `-e` (different values) is a usage error.
+
+## `tmvp use`
+
+```
+tmvp use            # print the active env and where it came from
+tmvp use dev        # persist dev for this product (TMVP_HOME/state/env.json, 0600)
+tmvp use prod       # allowed for any env; writes to prod still need --force
+tmvp use default    # forget it → default_env, else the first env (same as --clear)
+```
+
+The state is keyed by the canonical config path + product name, so two
+configs naming the same product never share a choice.
+
+## Batch is still first-class
+
+Name several envs and the same read runs on all of them in parallel:
+`tmvp all db ls`, `tmvp dev,prod db query "select 1" --diff`, `tmvp 'prod*' db health`,
+`tmvp '*.db' health`, `tmvp prod -l role=primary health`. An explicit selector always
+wins over `use`/default_env.
+
+## Output says where the env came from
+
+- text mode: a header on stderr — `# env: dev (source: use — tmvp use (…/env.json))`
+- `--json`: every frame carries `env` and `env_source`
+- the audit log records `env_source`, `env_selector` and `force` on every command and write
+
+## Writes and `--force`
+
+Writes run on exactly one env and one system (never batched). A **protected** env —
+`destructive: false`, the default, i.e. production — needs `--force` in addition to
+`--reason`, however the env was chosen (named, `-e`, `TMVP_ENV`, `use`, `default_env`).
+`--preview` needs no `--force` (it changes nothing).
+
+```
+tmvp write prod db "update …" --reason "fix #42" --preview
+tmvp write prod db "update …" --reason "fix #42" --force
+tmvp use dev && tmvp write db "update …" --reason "test data"   # dev has destructive: true
+```
+
+## Names
+
+An env named like a system, a verb or a tmvp command (`use`, `certs`, …) is rejected by
+`tmvp validate`, so `tmvp <word> …` is never ambiguous. `default_env` must name an env.
+
+## Env types — many envs of one kind
+
+```yaml
+envs:
+  dev-alice: { type: dev }          # dev/test/local: destructive allowed by default
+  staging:   { type: staging }      # staging and untyped envs: protected by default
+  prod-eu:   { type: production }   # prod: always protected; destructive: true is rejected
+  prod-us:   { type: production }
+```
+`type:` accepts common spellings and normalises them: production/prod/prd/live → `prod`; staging/stage/stg/uat/preprod/qa → `staging`; development/develop/dev → `dev`; test/testing/ci → `test`; `local`. Any other word is kept as a custom type. An explicit `destructive:` wins, except on a prod-type env.
+
+Select by type: `tmvp type:prod db query "select 1"`, or the bare type word when no env has that name (`tmvp prod db …` reads prod-eu and prod-us). Writes still take exactly one env.
+
+
+---
+<!-- docs/llms/secrets.md -->
+
+# Secrets & certificates — health
+
+Secrets are `$(command)`s run lazily by the local server and held in memory only
+(see `tmvp llms config`). These commands report on them **without ever printing a
+value or key material**.
+
+## `tmvp secrets status [-e envsel] [--days 30]`
+
+Fetches every secret in scope (top-level + the selected envs; all envs without `-e`)
+and prints one row per name:
+
+| Column | Meaning |
+|---|---|
+| `state` | `ok` · `missing` (command failed / printed nothing) · `invalid` (rejected / too short) · `login_required` (a system using it fails its `login.check`) |
+| `source` | the first word of the command only (`sec`, `op`, `aws` …); `env` for `${VAR}` secrets |
+| `fetched_at` | last fetch by this server |
+| `updated` | `yes`/`no`: the value changed since the previous fetch (compared by a salted hash kept in server memory, never the value); `unknown` on the first fetch |
+| `expires_at` | when the command printed `{"value":…,"expires_at":…}` |
+| `cert_*` | for PEM / kubeconfig (`client-certificate-data`, embedded PEM) / service-account JSON: earliest x509 `NotAfter`, days left, subject, count, `ok`/`expiring`/`expired` |
+| `private_key` | whether a private key is present (`true`/`false`; never the key) |
+
+Exit 2 when any secret is not ok, 1 when a held cert is expired.
+
+## `tmvp secrets audit [--since 1d]`
+
+From the audit log: every `fetch`, `refresh`, `invalidate` (after an auth error) and
+`failure`, per name, with time, the command that triggered it (`run prod.db query`) and
+`updated`. No values.
+
+## `tmvp certs [-e envsel] [--days 30]`
+
+TLS handshake (read-only, 5s timeout, through `via:` tunnels) with every system that has
+a TLS endpoint, plus certs held in secrets:
+
+- postgres: DSN with `sslmode=require|verify-ca|verify-full` (SSLRequest, then TLS)
+- `https://` `url`/`base_url` (http, web, prometheus, elasticsearch, grafana, loki …)
+- k8s: the API server of the kubeconfig `context`
+- `rediss://`, `tls://`, `wss://`, `mongodb…?tls=true`; `host`/`brokers` with `tls: true` or `security_protocol: SSL`
+
+Per endpoint: leaf `NotAfter`, days left (`chain_min_days` over the chain), issuer, SANs,
+trusted (system roots). `expiring` when < `--days`; exit 1 when anything is expired or
+unreachable.
+
+## `tmvp doctor`
+
+The summary adds two lines — `secrets:` (ok / missing / certs expiring) and
+`certificates:` (endpoints expiring within 30 days) — and the top fixes name them.
+
+## `$dotenv(file, KEY)` — use the .env files you already have
+```yaml
+envs:
+  prod:
+    secrets:
+      pg_pw: "$dotenv(.env.prod, PGPASSWORD)"   # see path rules below
+```
+Paths: `.env.prod` = repo root (falls back to the config's folder if not there); `./x` or `../x` = relative to config.yaml; `/abs/path`, `C:\…`, `\\server\share\…` and `~/…` as written. `/` and `\` both work as separators on every OS, so one config.yaml works on macOS, Linux and Windows.
+tmvp's local server reads just that key (dotenv rules: `export`, quotes, `# comments`, last definition wins) and keeps the value in memory — the agent only ever sees the file and key names. A missing file, missing or empty key is `secret_missing`, naming file and key, never a value. `tmvp env-keys` lists the keys each env file has.
+The value still sits in a plain-text file on disk: fine to start; for prod, prefer `$file(sec get … --out ${out})` (encrypted, unreadable even with `cat`).
+
+## `${VAR}` — process environment
+`pg_pw: "${PGPASSWORD}"` (or `${PGPASSWORD:-default}`) reads the variable from the **tmvp server's** environment, i.e. the shell that first started it (`tmvp server stop` after changing the variable). Good for CI; for laptops prefer `$dotenv(…)` or `sec`, which don't depend on which terminal started the server.
+
+
+---
+<!-- docs/llms/logs-and-metrics.md -->
+
+# logs and metrics — where to query
+
+OpenTelemetry has no query endpoint of its own: the collector *exports* to a backend, and you query
+the backend. Find where your logs/metrics/traces land (the collector's `exporters:`), then use that type.
+
+| Where it lands | tmvp type | Verb |
+|---|---|---|
+| Loki (logs) | `loki` | `range '{app="api"} \|= "error"' --since 30m`, `tail`, `query` (metric LogQL) |
+| Prometheus / Mimir / Thanos / VictoriaMetrics (metrics) | `prometheus` | `query`, `range`, `alerts` |
+| Elasticsearch / OpenSearch (logs, APM) | `elasticsearch` / `opensearch` | `search <index> '<json>'`, `count` |
+| Anything Grafana can see (incl. Tempo-less OTel backends) | `grafana` | `query <datasource-uid> '<expr>'`, `dashboard <uid>` to copy a panel's query |
+| GCP Cloud Logging | `gcp` | `logs` |
+| AWS CloudWatch Logs | `aws` | `logs` |
+| Azure Monitor / Log Analytics | `az` | `logs` |
+| Pod stdout (no backend) | `k8s` | `logs` |
+| Plain files on a VM | `ssh` | `@script` (e.g. `journalctl`/`tail` in a saved script) |
+
+Tips:
+- Always narrow first: `loki values app`, `prometheus ls http_`, `elasticsearch mapping <index>`, `grafana ls`.
+- Every read is bounded (`--since`, `--limit`, byte cap); ask for less and repeat rather than one huge pull.
+- Multi-env: `tmvp all logs range '{app="api"} |= "panic"' --since 1h` runs per env in parallel.
+
+
+---
+<!-- docs/llms/types/aws.md -->
+
+# aws
+
+AWS through the `aws` CLI with a per-call environment (your ~/.aws is never modified).
+
+## Fields
+region, profile, access_key/secret_key/session_token (secrets), credentials/config (`${file:secrets.x}`); login: {manual: "aws sso login --profile p", check: "aws sts get-caller-identity --profile p"}
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — configured scope (profile, region), whoami, saved scripts |
+| `whoami` | read | sts get-caller-identity (account, arn) |
+| `logs` | read | logs <log-group> [filter-pattern] — CloudWatch, bounded by --since (≤7d) / --limit |
+| `call` | read-write | call <service> <op> [args] — read-only ops; through tmvp write any op (--preview shows it) |
+| `cli` | write, default | alias of `call` for tmvp write (kept for compatibility) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = configured scope (profile, region) + saved scripts + whoami.
+
+## Examples
+```
+tmvp all aws ls
+tmvp prod aws logs /ecs/api "ERROR" --since 1h
+tmvp prod aws call ec2 describe-instances
+tmvp write prod aws call ec2 start-instances --instance-ids i-0abc --reason "restore box"
+```
+
+
+---
+<!-- docs/llms/types/az.md -->
+
+# az
+
+Azure through `az`; a service principal runs in a private AZURE_CONFIG_DIR per call.
+
+## Fields
+subscription, tenant/client_id/client_secret (secret) or certificate, workspace; login: {manual: "az login", check: "az account show"}
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — configured scope (subscription, resource_group, workspace, tenant), whoami, saved scripts |
+| `whoami` | read | az account show (subscription, tenant, user) |
+| `logs` | read | logs ["<kql>"] — Log Analytics (workspace:) or, without a query, the activity log; bounded by --since (≤7d) / --limit |
+| `call` | read-write | call <az args> — read commands only (list/show/query ...); through tmvp write any call (--preview shows it) |
+| `cli` | write, default | alias of `call` for tmvp write (kept for compatibility) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = configured scope (subscription, resource_group, workspace, tenant) + saved scripts + whoami.
+
+## Examples
+```
+tmvp all azure ls
+tmvp prod azure logs "AppRequests | take 20"
+tmvp prod azure call vm list
+tmvp write prod azure call vm start -n api -g rg --reason "restore"
+```
+
+
+---
+<!-- docs/llms/types/elasticsearch.md -->
+
+# elasticsearch
+
+Elasticsearch and OpenSearch (type `elasticsearch` or its alias `opensearch`; same verbs). Plain HTTP, no SDK. A read connection only sends GET, plus POST to `_search`, `_count`, `_msearch`, `_mapping`, `_field_caps`, `_validate/query`.
+
+## Fields
+url (or base_url), one of api_key (`Authorization: ApiKey …`) | token (bearer) | user/password, headers, ca (`${file:secrets.ca}`), insecure; per mode. 401 → `auth_error`; 403 → `policy_blocked` (the credential lacks the privilege).
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [substring] — indices (health, docs), aliases, saved queries/*.json |
+| `health` | read | health — cluster health (status, nodes, shards) |
+| `indices` | read | indices [pattern] — _cat/indices (health, status, docs, size) |
+| `mapping` | read | mapping <index> — one row per field: index, field (dotted), type |
+| `search` | read, @item | search <index> '<json>'\|@saved [-F q=<lucene>] — hits as rows; size ≤ --limit, server timeout; @saved = queries/<name>.json (front-matter index:) |
+| `count` | read | count <index> ['<json>'\|@saved] [-F q=<lucene>] |
+| `cat` | read | cat <endpoint> [pattern] — allow-listed _cat endpoints: health indices aliases nodes shards allocation count segments thread_pool pending_tasks recovery templates master plugins fielddata tasks |
+| `get` | read | get <index> <id> — one document |
+| `index` | write, default | index <index> '<json>'\|@saved [-F id=<id>] — create/replace a document |
+| `update` | write | update <index> <id> '<partial json>' — partial update (body without "doc"/"script" is wrapped in {"doc": …}) |
+| `delete` | write | delete <index> <id> — delete one document |
+| `update-by-query` | write | update-by-query <index> '<json with query + script>' (--preview = count; no query = every doc → needs destructive) |
+| `delete-index` | destructive | delete-index <index> — no wildcards, no _all |
+| `delete-by-query` | destructive | delete-by-query <index> '<json with query>' (--preview = count) |
+| `reindex` | destructive | reindex '<json {"source":…,"dest":…}>' |
+<!-- END verbs -->
+
+## Discovery
+`ls [substring]` = indices (non-dot), aliases and saved queries `assets/<system>/queries/<name>.json` (front-matter `index:`; `tmvp prod search @errors` runs `search`). `search` sets `size` ≤ `--limit` and a server-side `timeout`; responses are capped by `limits.bytes`.
+
+Destructive detection: `update-by-query` without a query (or `match_all`) needs `destructive: true`; `delete-index` refuses wildcards and `_all`.
+
+## Examples
+```
+tmvp prod search ls
+tmvp prod search mapping logs-2026.11
+tmvp all search search 'logs-*' '{"query":{"term":{"http.status":500}}}' --limit 20
+tmvp prod search count orders -F q='status:failed'
+tmvp prod search cat shards
+tmvp write prod search index orders '{"id":1,"status":"ok"}' -F id=1 --reason "fix doc"
+tmvp write prod search delete-by-query orders '{"query":{"term":{"test":true}}}' --preview --reason "drop test docs"
+```
+
+
+---
+<!-- docs/llms/types/gcp.md -->
+
+# gcp
+
+Google Cloud through `gcloud`; properties per call via env (never `gcloud config set`).
+
+## Fields
+project, region, zone, account, credentials (`${file:secrets.x}` SA JSON); login: {manual: "gcloud auth login", check: "gcloud auth print-access-token"}
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — configured scope (project, region, zone, account), whoami, saved scripts |
+| `whoami` | read | active account and project |
+| `logs` | read | logs ["<logging filter>"] — Cloud Logging, newest first, bounded by --since (≤7d) / --limit |
+| `call` | read-write | call <gcloud args> — read verbs only (list/describe/read ...); through tmvp write any call (--preview shows it) |
+| `cli` | write, default | alias of `call` for tmvp write (kept for compatibility) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = configured scope (project, region, zone, account) + saved scripts + whoami.
+
+## Examples
+```
+tmvp all cloud ls
+tmvp prod cloud logs "severity>=ERROR" --since 1h
+tmvp prod cloud call compute instances list
+tmvp write prod cloud call run services update api --region=x --reason "…" --preview
+```
+
+
+---
+<!-- docs/llms/types/gh.md -->
+
+# gh
+
+GitHub through `gh`: workflow runs and logs, deployments, PRs, releases for one repo. tmvp sets the repo (`-R` / `GH_REPO`); a `token` goes only into the child's `GH_TOKEN`.
+
+## Fields
+repo (owner/name, required), host (GitHub Enterprise), token (secret, optional; default is the user's `gh auth login`); login: {manual: "gh auth login", check: "gh auth status"}
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — configured repo/host, whoami, saved scripts |
+| `whoami` | read | the GitHub account gh is using (login, name) |
+| `runs` | read | runs [--workflow W] [--branch B] [--status S] — recent workflow runs (bounded by --limit) |
+| `run` | read | run <id> — one run and its jobs (status, conclusion, times) |
+| `run-log` | read | run-log <id> [--failed] — the run's log (--failed: failed steps only), line-capped |
+| `workflows` | read | workflows — the repo's workflows (name, path, state) |
+| `prs` | read | prs [--state open\|closed\|merged\|all] — pull requests |
+| `pr` | read | pr <n> — one pull request with checks and review state |
+| `releases` | read | releases — tags, names, latest/draft/prerelease, dates |
+| `deployments` | read | deployments [--environment E] — GitHub deployments (environment, ref, sha, creator, time) |
+| `branches` | read | branches — branch names, head sha, protected |
+| `call` | read-write | call <gh args> — reads only (run/pr/issue/release/workflow/label/cache list\|view\|status\|diff\|checks, api GET); through tmvp write any allowed call |
+| `rerun` | write | rerun <run-id> [--failed] — re-run a workflow run (tmvp write; --preview shows it) |
+| `dispatch` | write | dispatch <workflow> [--ref R] [-f k=v ...] — trigger a workflow_dispatch run (tmvp write) |
+| `cancel` | write | cancel <run-id> — cancel a running workflow run (tmvp write) |
+| `cli` | write, default | cli <gh args> — any gh call that is not blocked (tmvp write; --preview shows it) |
+<!-- END verbs -->
+
+## Policy
+- `call` runs reads only: `run|pr|issue|release|workflow|label|cache|variable|secret|repo … list|view|status|diff|checks`, and `api` GET (`-X POST`, `-f`/`-F`/`--input` without `-X GET` are writes).
+- Never through tmvp, not even `tmvp write`: `auth`, `config`, `secret` (except `secret list`, names only), `ssh-key`, `gpg-key`, `extension`, `codespace`, `alias`, `gist`, `run download`, `repo delete|clone|fork|sync`, and `-R`/`--repo`/`--hostname` (set from config).
+- `rerun`, `dispatch`, `cancel`, `cli` are writes: `tmvp write … --reason`, `--preview` first.
+
+## Discovery
+`ls` = configured repo/host + saved scripts + whoami. Then `workflows`, `runs`, `deployments`.
+
+## Examples
+```
+tmvp prod gh runs --workflow deploy-prod-new.yml --limit 5
+tmvp prod gh run 123456789
+tmvp prod gh run-log 123456789 --failed
+tmvp all gh deployments --environment production
+tmvp prod gh call api repos/{owner}/{repo}/commits/main/status
+tmvp write prod gh rerun 123456789 --failed --reason "flaky test" --preview
+tmvp write dev gh dispatch deploy-dev-new.yml --ref main --reason "redeploy dev"
+```
+
+
+---
+<!-- docs/llms/types/git.md -->
+
+# git
+
+Git repos, read only (never pushes). Bare clone cached per env/system, fetched at most once a minute.
+
+## Fields
+url, branch, key (`${file:secrets.x}`) or token (+ user)
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — branches and tags (kind, name, commit, date), newest first, --limit |
+| `log` | read | log [rev] [-- path] — commits (hash, author, date, subject), --since / --limit |
+| `diff` | read | diff [a] [b] [-- path] — default HEAD~1 HEAD; bounded text |
+| `show` | read | show <rev>[:path] — commit or file at a revision; bounded text |
+| `tags` | read | tags [pattern] — newest first |
+| `deploys` | read | deploys [tag-pattern] — tags and commits since --since (default 7d) |
+| `fetch` | read | fetch — refresh the local cache now |
+<!-- END verbs -->
+
+## Discovery
+`ls` = branches and tags, newest first.
+
+## Examples
+```
+tmvp all infra ls --limit 20
+tmvp prod infra log --since 2d
+tmvp prod infra deploys
+tmvp prod infra show v1.4.2:helm/values.yaml
+```
+
+
+---
+<!-- docs/llms/types/grafana.md -->
+
+# grafana
+
+Grafana HTTP API: dashboards → the queries behind each panel, datasources, Grafana-managed alert state, annotations, and `query` on any datasource through `/api/ds/query` (Prometheus, Loki, Elasticsearch, OTel backends — whatever Grafana can query). Writes: `annotate`, `silence create|expire`. Nothing is ever deleted.
+
+## Fields
+url (or base_url), token (service-account token: `${secrets.grafana_sa}`; Viewer for reads, Editor for annotate/silence), org_id, headers, ca, insecure. 401 → `auth_error`; 403 → `policy_blocked` (role too low).
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [substring] — dashboards (uid, folder), datasources (uid, type), saved queries/*.expr |
+| `dashboards` | read | dashboards [-F q=<title search>] [-F tag=<tag>] — uid, title, folder, tags |
+| `dashboard` | read | dashboard <uid> — one row per panel query: panel, title, type, datasource, ref, expr |
+| `datasources` | read | datasources — uid, name, type, default |
+| `alerts` | read | alerts [-F state=firing\|pending] — Grafana-managed (unified) alert instances: alert, state, severity, since, labels, summary |
+| `silences` | read | silences — Grafana alertmanager silences: id, state, matchers, ends, comment |
+| `annotations` | read | annotations [-F tags=a,b] [-F dashboard=<uid>] — over --since (default 24h) |
+| `query` | read, @item | query <datasource-uid> '<expr>' \| query @saved — via /api/ds/query over --since (default 1h, ≤ 7d), rows capped by --limit; -F step=60s, other -F k=v go into the query object (e.g. -F queryType=range) |
+| `annotate` | write, default | annotate '<text>' [-F tags=deploy,api] [-F dashboard=<uid>] [-F panel=<id>] [-F time=RFC3339] [-F end=RFC3339] |
+| `silence` | write | silence create '<alertname=X,env=~prod.*>' [-F duration=1h] \| silence expire <id> — Grafana alertmanager (comment = --reason) |
+<!-- END verbs -->
+
+## Discovery
+`ls [substring]` = dashboards (uid) + datasources (uid, type) + saved `assets/<system>/queries/<name>.expr` (front-matter `datasource: <uid>`, body = expression; `tmvp prod grafana @name` runs `query`). `dashboard <uid>` shows the exact query each panel runs — paste it into `query`.
+
+## Examples
+```
+tmvp prod grafana ls latency
+tmvp prod grafana dashboard abc123
+tmvp prod grafana query prom1 'sum(rate(http_requests_total{code=~"5.."}[5m]))' --since 6h -F step=1m
+tmvp prod grafana query loki1 '{app="api"} |= "error"' -F queryType=range --limit 50
+tmvp prod grafana alerts -F state=firing
+tmvp write prod grafana annotate "deploy api v2.3" -F tags=deploy,api --reason "deploy marker"
+tmvp write prod grafana silence create 'alertname=HighErr,env=prod' -F duration=1h --reason "planned failover"
+```
+
+
+---
+<!-- docs/llms/types/grpc.md -->
+
+# grpc
+
+gRPC services, with no generated code. Methods and messages come from server reflection, or from a descriptor set (`protoset:`) when the server has no reflection. Requests and responses are JSON (protojson). A method runs as a read only if it matches `read_methods`, and never if it streams from the client. Everything else runs only through `tmvp write` (`--preview` shows the request and sends nothing).
+
+## Fields
+address (`host:port`, required) · tls (`true` = TLS; default plaintext) · ca (`${file:secrets.ca}`) · server_name · insecure (skip TLS verify, test servers only) · token (secret, sent as `authorization: Bearer …` metadata) · headers (map of metadata; values may be secrets) · protoset (descriptor set file relative to the skill: `buf build -o api.binpb` or `protoc --include_imports --descriptor_set_out=api.binpb …`) · read_methods (globs on `pkg.Service/Method` or the bare method name; default `Get* List* Search* Find* Count* Describe* Check Watch Health*`) · `via:` for tunnels
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — saved calls (@name), then services and methods with kind (read/write) and streaming |
+| `describe` | read | describe <service\|pkg.Service/Method\|message> — methods, or request/response fields |
+| `health` | read | health [service] — grpc.health.v1 Check (status, latency) |
+| `call` | read-write, default, @item | call <pkg.Service/Method> ['<json>'] \| call @saved [k=v ...] — read methods only as reads; others via tmvp write (--preview) |
+<!-- END verbs -->
+
+## Discovery
+`ls` lists saved calls (`assets/<system>/calls/*.json`), then every service method with kind (read/write), streaming (unary/server/client/bidi) and request/response types. `describe <service|pkg.Service/Method|message>` shows the fields.
+
+## Saved calls
+```json
+---
+description: one order by id
+method: shop.v1.OrderService/GetOrder
+params: [id]
+---
+{"id": "{id}"}
+```
+Run with `tmvp prod api @get-order id=42`, or with positional values in `params` order (`@get-order 42`).
+
+## Examples
+```
+tmvp prod api ls
+tmvp prod api describe shop.v1.OrderService/GetOrder
+tmvp all api health
+tmvp all api call shop.v1.OrderService/GetOrder '{"id":"42"}' --diff
+tmvp prod api call shop.v1.OrderService/ListOrders '{"status":"PAID"}' --limit 20
+tmvp write prod api call shop.v1.OrderService/CancelOrder '{"id":"42"}' --reason "support #812" --preview
+```
+
+
+---
+<!-- docs/llms/types/http.md -->
+
+# http
+
+Plain HTTP APIs. Paths resolve against base_url (absolute URLs refused). Named APIs come from `apis/*.md` front-matter {method, path, description, params, mutating} and/or an `openapi:` file/path/URL.
+
+## Fields
+base_url, token (secret bearer) or user/password, headers, health_path, insecure, openapi (file relative to the skill, path on base_url, or URL)
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — defined APIs (assets apis/*.md + openapi:): name, method, path, mutating, source; offline unless openapi is a URL |
+| `apis` | read | apis [filter] — same as ls, filtered by name/path substring |
+| `call` | read-write, @item | call <api\|@api> [k=v ...] — run a defined API; {k} fills path params; mutating APIs only via tmvp write (--preview) |
+| `get` | read | get <path> [-F q.key=value] [-F h.Header=value] — JSON → rows, else text |
+| `health` | read | health [path] — status, latency (default health_path or /health) |
+| `post` | write, default | post <path> [body] (tmvp write) |
+| `put` | write | put <path> [body] (tmvp write) |
+| `patch` | write | patch <path> [body] (tmvp write) |
+| `delete` | write | delete <path> (tmvp write) |
+<!-- END verbs -->
+
+## Discovery
+`ls` / `apis [filter]` = defined APIs (offline unless openapi is a URL); `call <api>` runs GET APIs as reads, mutating ones only via tmvp write.
+
+## Examples
+```
+tmvp prod api ls
+tmvp all api call @get-order id=42
+tmvp prod api get /v1/status -F q.verbose=1
+tmvp write prod api call refund-order id=42 --reason "support #812" --preview
+```
+
+
+---
+<!-- docs/llms/types/k8s.md -->
+
+# k8s
+
+Kubernetes via client-go (no kubectl), dialing through `via:`. Read connections refuse every non-GET request. (Being rewritten; `ls` is pending.)
+
+## Fields
+kubeconfig (`${file:secrets.x}`, read./write. override), context, namespace (`-F ns=x` per call)
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | what exists: saved manifests, then namespaces and workloads/services in the namespace (-F A=true for all) |
+| `ctx` | read | context, cluster, namespace, auth kind |
+| `health` | read | version, readyz, ready nodes, latency |
+| `get` | read | get <kind> [name] [-F selector=app=x] [-F ns=x\|-F A=true] [-F o=yaml] |
+| `describe` | read | describe <kind> <name> \| <kind>/<name> — object + its events |
+| `logs` | read | logs <pod>\|deploy/<name> [-F container=c] [-F previous=true] (bounded tail, --since) |
+| `events` | read | events [name] [-F type=Warning] (--since filters) |
+| `top` | read | top pods\|nodes (metrics API) |
+| `apply` | write, default | apply '<yaml>'\|@manifest (server-side apply; --preview = dry-run) |
+| `scale` | write | scale <kind>/<name> <replicas> |
+| `restart` | write | restart deploy\|sts\|ds/<name> (rollout restart) |
+| `rollout` | write | rollout undo deploy/<name> [-F to-revision=N] |
+| `delete` | write | delete <kind> <name> \| <kind> -F selector=… (destructive) \| ns <name> (destructive) |
+| `exec` | write | exec <pod> [-F container=c] -- <cmd> [args...] |
+<!-- END verbs -->
+
+## Discovery
+TODO: `ls` (namespaces/workloads) pending the client-go rewrite; until then `get ns`, `get deploy`.
+
+## Port-forward (k8s as a `via:` hop)
+A k8s system is also a tunnel: a `portforward` system with `via: <k8s system>` and
+`target: kind/name:port` port-forwards (like `kubectl port-forward`) through the API server, and
+any system can then use that portforward as its `via:`. `kind` is `pod`, `svc`, `deploy`, `sts`, …;
+`svc/` and workload targets resolve to a Running+Ready, non-terminating pod (error `not_found` if
+none); a service port maps to its `targetPort`, named ports resolve from the pod spec. The tunnel
+connection is read-only except the port-forward upgrade itself. Chains work: the k8s system can
+itself sit behind `via: <ssh>`.
+```yaml
+bastion:  { type: ssh, host: bastion.example.com, user: deploy, key: "${file:secrets.ssh_key}" }
+cluster:  { type: k8s, via: bastion, kubeconfig: "${file:secrets.kubeconfig}", context: prod }
+pg-fwd:   { type: portforward, via: cluster, target: svc/postgres:5432, namespace: data }
+db:       { type: postgres, via: pg-fwd, read: { dsn: "${secrets.db_ro}" } }
+api-fwd:  { type: portforward, via: cluster, target: deploy/api:http }
+api:      { type: http, via: api-fwd, base_url: "http://api.internal" }
+```
+`tmvp prod db …` and `tmvp prod api get /health` then run through ssh → API server → pod.
+`tmvp prod pg-fwd open` keeps a local 127.0.0.1 listener for plain psql.
+
+## Examples
+```
+tmvp all cluster get pods
+tmvp prod cluster logs deploy/api --since 15m --limit 200
+tmvp prod cluster events
+tmvp write prod cluster restart deploy/api --reason "stuck workers"
+```
+
+
+---
+<!-- docs/llms/types/kafka.md -->
+
+# kafka
+
+Apache Kafka (also Redpanda, MSK, Confluent, Event Hubs' Kafka endpoint). Embedded franz-go — no CLI. Every broker connection goes through `via:`. `consume` reads partitions directly: it never joins a consumer group and never commits.
+
+## Fields
+brokers (`"b1:9092,b2:9092"`, or a YAML list of literal host:port), sasl `{mechanism: plain|scram-sha-256|scram-sha-512, user, password: ${secrets.x}}`, tls (`true`, or `{ca: ${file:secrets.ca}, cert: ${file:…}, key: ${file:…}, server_name, insecure}`); per mode (`read.sasl`, `write.sasl`). A rejected SASL credential → `auth_error` (secrets re-fetched, retried once).
+
+```yaml
+bus:
+  type: kafka
+  brokers: "${vars.kafka}"
+  tls: true
+  read:  {sasl: {mechanism: scram-sha-512, user: reader, password: "${secrets.kafka_ro}"}}
+  write: {sasl: {mechanism: scram-sha-512, user: ops,    password: "${secrets.kafka_rw}"}}
+```
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [substring] — topics (partitions) + saved messages/*.json |
+| `topics` | read | topics [substring] — topics with partition count, replication factor |
+| `describe` | read | describe <topic> — per-partition leader/replicas/isr/start/end offsets, then non-default topic configs |
+| `groups` | read | groups — consumer groups (state, protocol type) |
+| `lag` | read | lag <group> — per topic/partition committed offset, end offset, lag, member |
+| `consume` | read | consume <topic> [-F from=earliest\|latest-N\|<offset>\|<RFC3339>] [-F partition=N] [-F wait=10s] — bounded by --limit and time; never joins a group or commits (default from=latest-10 per partition) |
+| `health` | read | health — brokers, controller, cluster id |
+| `produce` | write, default | produce <topic> <value\|@saved> [-F key=k] [-F partition=N] (--preview shows the record) |
+| `create-topic` | write | create-topic <topic> [-F partitions=1] [-F replication=-1] [-F config.<k>=<v>] |
+| `delete-topic` | destructive | delete-topic <topic> |
+| `delete-records` | destructive | delete-records <topic> -F before=<offset>\|latest [-F partition=N] — truncate partitions before an offset |
+| `reset-offsets` | destructive | reset-offsets <group> <topic> -F to=earliest\|latest\|<RFC3339> — group must be empty (--preview shows old→new) |
+<!-- END verbs -->
+
+## Discovery
+`ls [substring]` = topics + saved messages (`assets/<system>/messages/<name>.json`, used by `produce <topic> @name`).
+
+## Examples
+```
+tmvp all bus ls orders
+tmvp prod bus describe orders
+tmvp prod bus lag billing-worker
+tmvp prod bus consume orders -F from=latest-20 --limit 50
+tmvp prod bus consume orders -F from=2026-11-11T09:00:00Z -F partition=3
+tmvp write prod bus produce orders '{"id":1}' -F key=1 --reason "replay order 1"
+tmvp write prod bus reset-offsets billing-worker orders -F to=2026-11-11T09:00:00Z --preview --reason "reprocess"
+```
+
+
+---
+<!-- docs/llms/types/loki.md -->
+
+# loki
+
+Grafana Loki (logs). Read only. Every query needs a real label selector: `{}`, `{app=""}` or `{app=~".*"}` alone are refused (`guard_rejected`) before Loki sees them.
+
+## Fields
+url (or base_url, the Loki root — no `/loki/api`), token (bearer) or user/password (basic; Grafana Cloud = instance id + API token), tenant (`X-Scope-OrgID`), headers, ca, insecure, max_range (default `7d`).
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [substring] — label names (over --since, default 6h) + saved queries/*.logql |
+| `labels` | read | labels — label names seen in --since (default 6h) |
+| `values` | read | values <label> — values of a label in --since (default 6h) |
+| `query` | read | query '<logql>' [-F time=RFC3339] — instant query (metric LogQL → one row per series) |
+| `range` | read, @item | range '<logql>'\|@saved — log lines (newest first) or metric samples over --since (default 1h, ≤ max_range 7d); lines capped by --limit; -F step=1m -F direction=forward |
+| `tail` | read | tail '<logql>'\|@saved [-F follow=10s] — last lines of --since (default 15m) oldest→newest; follow polls for new lines, bounded by time and --limit |
+| `series` | read | series '<selector>' — label sets of matching streams in --since (default 1h) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = label names + saved LogQL `assets/<system>/queries/<name>.logql` (`tmvp prod logs @errors` runs `range`). Then `values <label>` to build a selector.
+
+## Examples
+```
+tmvp prod logs ls
+tmvp prod logs values app
+tmvp all logs range '{app="api"} |= "error"' --since 30m --limit 100
+tmvp prod logs query 'sum by (app) (rate({env="prod"} |= "error" [5m]))'
+tmvp prod logs tail '{app="api"}' -F follow=15s
+tmvp prod logs @errors --since 2h
+```
+
+
+---
+<!-- docs/llms/types/mongo.md -->
+
+# mongo
+
+MongoDB. Reads use secondaryPreferred, `maxTimeMS` and a document cap; `$out`/`$merge` refused in reads. Filters/pipelines are relaxed Extended JSON, inline or `@saved` (`queries/*.json`).
+
+## Fields
+read.uri / write.uri (secret mongodb:// URI), database (or in the URI path); `-F db=x` per call
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [db] — saved queries (@name, all asset roots) then live collections/views |
+| `collections` | read | collections [db] → collection names and types |
+| `find` | read | find <coll> ['{filter}'\|@saved] [-F projection='{..}' -F sort='{..}' -F skip=N] |
+| `aggregate` | read | aggregate <coll> '[pipeline]'\|@saved ($out/$merge refused: use aggregate-out) |
+| `count` | read | count <coll> ['{filter}'\|@saved] |
+| `insert` | write | insert <coll> '{doc}'\|'[docs]'\|@saved |
+| `update` | write | update <coll> '{filter}' '{update}' (updateMany; empty filter = destructive) |
+| `delete` | write | delete <coll> '{filter}' (deleteMany; empty filter = destructive) |
+| `aggregate-out` | write | aggregate-out <coll> '[pipeline with $out/$merge]'\|@saved |
+| `drop` | destructive | drop <coll> (destructive) |
+<!-- END verbs -->
+
+## Discovery
+`ls [db]` = saved queries + live collections and views.
+
+## Examples
+```
+tmvp all docs ls
+tmvp prod docs find users '{"email":"a@b.test"}' -F projection='{"_id":1}'
+tmvp prod docs count orders '{"status":"open"}'
+tmvp write prod docs update users '{"_id":"x"}' '{"$set":{"blocked":true}}' --reason "abuse #9" --preview
+```
+
+
+---
+<!-- docs/llms/types/mysql.md -->
+
+# mysql
+
+MySQL / MariaDB. Read-only session + `START TRANSACTION READ ONLY`, `max_execution_time`, row cap. Writes in a transaction; `--preview` rolls back (not for DDL).
+
+## Fields
+read.dsn / write.dsn (secret, go-sql-driver DSN or mysql:// URL); `via:`; `limits:`
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — saved queries (@name, all asset roots) then live tables and views of the current database |
+| `health` | read | ping, server version, read_only, latency |
+| `describe` | read | describe → tables of the current database; describe <[db.]table> → columns |
+| `query` | read, @item | query "<sql>" [params...] \| query @saved [params...] (read-only tx, max_execution_time, row cap) |
+| `exec` | write, default | exec "<statement>"\|@saved [params...] (tmvp write; --preview = rolled-back tx, not for DDL) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = saved queries + live tables and views of the current database.
+
+## Examples
+```
+tmvp all my ls
+tmvp prod my describe orders
+tmvp prod my query "select id from orders limit 5"
+tmvp write prod my "delete from sessions where expires < now()" --reason "cleanup" --preview
+```
+
+
+---
+<!-- docs/llms/types/nats.md -->
+
+# nats
+
+NATS / JetStream. `sub` is bounded by count and time.
+
+## Fields
+url (nats://host:4222, comma list) + one of creds (`${file:secrets.x}`), token, user/password, nkey; per mode
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — JetStream streams, KV buckets and object stores (kind, name, msgs, bytes) |
+| `streams` | read | streams → name, subjects, msgs, bytes, consumers |
+| `consumers` | read | consumers <stream> → name, pending, ack pending, redelivered |
+| `sub` | read | sub <subject> [-F wait=5s] (core subscribe; stops at --limit msgs or wait) |
+| `kv-get` | read | kv-get <bucket> <key> |
+| `pub` | write, default | pub <subject> <data> |
+| `kv-put` | write | kv-put <bucket> <key> <value> |
+| `purge` | destructive | purge <stream> [-F subject=<filter>] (destructive) |
+| `stream-delete` | destructive | stream-delete <stream> (destructive) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = JetStream streams, KV buckets and object stores.
+
+## Examples
+```
+tmvp all bus ls
+tmvp prod bus consumers ORDERS
+tmvp prod bus sub "orders.>" -F wait=5s --limit 10
+tmvp write prod bus pub orders.retry '{"id":42}' --reason "replay #812"
+```
+
+
+---
+<!-- docs/llms/types/opensearch.md -->
+
+# opensearch
+
+OpenSearch — an alias of the [elasticsearch](elasticsearch.md) type (same fields and verbs; `ls`, `search`, `count`, `cat` … work the same).
+
+## Fields
+url (or base_url), one of api_key (`Authorization: ApiKey …`) | token (bearer) | user/password, headers, ca (`${file:secrets.ca}`), insecure; per mode. 401 → `auth_error`; 403 → `policy_blocked` (the credential lacks the privilege).
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [substring] — indices (health, docs), aliases, saved queries/*.json |
+| `health` | read | health — cluster health (status, nodes, shards) |
+| `indices` | read | indices [pattern] — _cat/indices (health, status, docs, size) |
+| `mapping` | read | mapping <index> — one row per field: index, field (dotted), type |
+| `search` | read, @item | search <index> '<json>'\|@saved [-F q=<lucene>] — hits as rows; size ≤ --limit, server timeout; @saved = queries/<name>.json (front-matter index:) |
+| `count` | read | count <index> ['<json>'\|@saved] [-F q=<lucene>] |
+| `cat` | read | cat <endpoint> [pattern] — allow-listed _cat endpoints: health indices aliases nodes shards allocation count segments thread_pool pending_tasks recovery templates master plugins fielddata tasks |
+| `get` | read | get <index> <id> — one document |
+| `index` | write, default | index <index> '<json>'\|@saved [-F id=<id>] — create/replace a document |
+| `update` | write | update <index> <id> '<partial json>' — partial update (body without "doc"/"script" is wrapped in {"doc": …}) |
+| `delete` | write | delete <index> <id> — delete one document |
+| `update-by-query` | write | update-by-query <index> '<json with query + script>' (--preview = count; no query = every doc → needs destructive) |
+| `delete-index` | destructive | delete-index <index> — no wildcards, no _all |
+| `delete-by-query` | destructive | delete-by-query <index> '<json with query>' (--preview = count) |
+| `reindex` | destructive | reindex '<json {"source":…,"dest":…}>' |
+<!-- END verbs -->
+
+## Discovery
+`ls [substring]` = indices (non-dot), aliases and saved queries `assets/<system>/queries/<name>.json` (front-matter `index:`; `tmvp prod search @errors` runs `search`). `search` sets `size` ≤ `--limit` and a server-side `timeout`; responses are capped by `limits.bytes`.
+
+Destructive detection: `update-by-query` without a query (or `match_all`) needs `destructive: true`; `delete-index` refuses wildcards and `_all`.
+
+## Examples
+```
+tmvp prod search ls
+tmvp prod search mapping logs-2026.11
+tmvp all search search 'logs-*' '{"query":{"term":{"http.status":500}}}' --limit 20
+tmvp prod search count orders -F q='status:failed'
+tmvp prod search cat shards
+tmvp write prod search index orders '{"id":1,"status":"ok"}' -F id=1 --reason "fix doc"
+tmvp write prod search delete-by-query orders '{"query":{"term":{"test":true}}}' --preview --reason "drop test docs"
+```
+
+
+---
+<!-- docs/llms/types/portforward.md -->
+
+# portforward
+
+A fixed tunnel to one remote endpoint through its own `via:` (ssh or k8s); usable as a `via:` hop.
+
+## Fields
+remote (host:port) or target (svc/x:port) + namespace for k8s, via, local_port
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — what this hop reaches: remote, via chain, local listener (no dial) |
+| `status` | read | dial the remote through the tunnel; latency, listener |
+| `open` | read | open a local 127.0.0.1 listener on local_port: or the tmvp port convention (= export pg-service) [-F port=N] (kept while the server keeps the system warm) |
+| `close` | read | close the local listener |
+<!-- END verbs -->
+
+## Discovery
+`ls` = remote, via chain, listener, default local port (no dial).
+
+## Examples
+```
+tmvp prod db-tunnel ls
+tmvp prod db-tunnel status
+tmvp prod db-tunnel open   # then: psql service=acme-prod-db (tmvp export pg-service)
+```
+
+
+---
+<!-- docs/llms/types/postgres.md -->
+
+# postgres
+
+PostgreSQL. Reads run on `read.dsn` inside `BEGIN READ ONLY` with statement/lock timeouts and a row cap; writes on `write.dsn` in a transaction (`--preview` rolls back and reports rows affected).
+
+## Fields
+read.dsn / write.dsn (secret: `postgres://user:pass@host:5432/db`), or host/port/dbname/user + password; `via:` for tunnels; `limits:`
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — saved queries (@name, all asset roots) then live tables, views, matviews |
+| `health` | read | ping, server version, recovery state, latency |
+| `describe` | read | describe            → tables; describe <table> → columns |
+| `query` | read, @item | query "<sql>" [params...] \| query @saved [params...] (read-only tx, row cap) |
+| `exec` | write, default | exec "<sql>"\|@saved [params...] (tmvp write; --preview = rolled-back tx) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = saved queries (assets `queries/*.sql`) + live tables/views/matviews; `describe <table>` = columns.
+
+## Examples
+```
+tmvp all db ls
+tmvp prod db describe orders
+tmvp all db query "select count(*) from orders where created_at > now() - interval '1 day'" --diff
+tmvp prod db @unpaid-orders 7
+tmvp write prod db "update orders set status='paid' where id=42" --reason "support #812" --preview
+```
+
+
+---
+<!-- docs/llms/types/prometheus.md -->
+
+# prometheus
+
+Prometheus HTTP API (also Thanos/Mimir/VictoriaMetrics). Read only.
+
+## Fields
+url (or base_url), token or user/password, headers, insecure
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [substring] — metric names (label __name__ values), filtered by substring, capped by --limit |
+| `query` | read | query "<promql>" [-F time=RFC3339] — instant vector → one row per series |
+| `range` | read | range "<promql>" [-F step=30s] — over --since (default 1h, ≤7d), one row per sample |
+| `alerts` | read | alerts — active alerts (name, state, severity, since) |
+<!-- END verbs -->
+
+## Discovery
+`ls [substring]` = metric names.
+
+## Examples
+```
+tmvp prod prom ls http_requests
+tmvp all prom query "sum(rate(http_requests_total{code=~\"5..\"}[5m]))"
+tmvp prod prom range "up" --since 6h -F step=1m
+tmvp prod prom alerts
+```
+
+
+---
+<!-- docs/llms/types/redis.md -->
+
+# redis
+
+Redis. Only read commands on reads; SCAN is bounded (never KEYS).
+
+## Fields
+url (secret redis:// or rediss://) or read.url/write.url; optional password, tls, tls_server_name
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [-F sep=:] — key prefixes from a bounded SCAN sample (≤5000 keys), with counts and dbsize |
+| `info` | read | info [section] → key/value rows |
+| `get` | read | get <key> (string values; other types → use type) |
+| `scan` | read | scan [pattern] [-F type=hash] (bounded SCAN, never KEYS) |
+| `ttl` | read | ttl <key> |
+| `type` | read | type <key> |
+| `set` | write | set <key> <value> [ttl e.g. 10m] |
+| `del` | write | del <key> [key...] (literal keys, no patterns) |
+| `expire` | write | expire <key> <ttl e.g. 1h> |
+| `flushdb` | destructive | flushdb (destructive) |
+| `flushall` | destructive | flushall (destructive) |
+<!-- END verbs -->
+
+## Discovery
+`ls [-F sep=:]` = dbsize + key prefixes (count, example) from a bounded SCAN sample (≤5000 keys); values are never read.
+
+## Examples
+```
+tmvp all cache ls
+tmvp prod cache scan "session:*" --limit 20
+tmvp prod cache ttl session:42
+tmvp write prod cache del session:42 --reason "force logout"
+```
+
+
+---
+<!-- docs/llms/types/script.md -->
+
+# script
+
+Your own scripts in `assets/<system>/scripts/` (sh, py, js, ps1, cmd, rb, shebang). `# tmvp: read` header = read; else write.
+
+## Fields
+env: {NAME: value} (values may be `${secrets.x}`; `${file:secrets.x}` → per-call path), read.env / write.env
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — saved scripts across all asset roots: name, read\|write, source file |
+| `list` | read | list — alias of ls |
+| `run` | read, @item | run @name [args] — only scripts declared `# tmvp: read` |
+| `exec` | write, default | exec @name [args] — any script (tmvp write; --preview shows it) |
+<!-- END verbs -->
+
+## Discovery
+`ls` (alias `list`) = scripts across asset roots: name, read|write, source.
+
+## Examples
+```
+tmvp all jobs ls
+tmvp prod jobs @queue-depth
+tmvp write prod jobs exec @requeue 42 --reason "stuck job" --preview
+```
+
+
+---
+<!-- docs/llms/types/ssh.md -->
+
+# ssh
+
+SSH host and `via:` tunneler (also the `{container: name}` hop and read-only docker). Commands run under `nice`, timeout and output caps; the key is parsed in memory.
+
+## Fields
+host, port (22), user, key (`${file:secrets.x}`), passphrase, password, host_key / known_hosts (or insecure: true); read.*/write.* per mode
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — saved scripts across all asset roots: @name, read\|write, description, source; plus running containers (name, image, status, ports) |
+| `health` | read | connect, uname, uptime, latency |
+| `docker` | read | docker ps [-a] \| logs <c> [--tail N] [--since X] [--timestamps] \| inspect <c> (env masked) \| stats [c] \| top <c> \| images \| compose ps \| compose logs <svc> (-F project=<dir> \| -F file=<path>) — allow-list only |
+| `script` | read, @item | script @name [args...] [-F container=<c>] — saved script declared read (assets/<system>/scripts/<name>.sh); in a container via docker exec -i |
+| `run` | write, default | run "<command>"\|@name [args...] [-F container=<c>] (tmvp write; nice + timeout + output caps; in a container via docker exec) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = saved scripts (`scripts/*.sh`) with read/write mode (reads need front-matter `read: true`),
+plus running containers (kind `containers`: name, image, status, ports) when the ssh user can use docker.
+
+## Docker (no docker CLI or API needed locally — everything runs over ssh)
+- `docker` (read) is an allow-list; anything else, and any flag not listed, is rejected:
+  `ps [-a]`, `logs <c> [--tail N] [--since X] [--timestamps]` (`--limit`/`--since` of the call fill in),
+  `inspect <c>` (Config.Env values masked as `KEY=***`), `stats [c]` (always `--no-stream`), `top <c>`,
+  `images`, `compose ps`, `compose logs <svc>` (with `-F project=<dir>` or `-F file=<compose.yml>`).
+- Inside a container: `script @name -F container=api` (read; script must declare read) pipes the saved
+  script into `docker exec -i api sh -s -- args`; `tmvp write ... "<cmd>" -F container=api --reason ...`
+  runs `docker exec api sh -c '<cmd>'` (same write policy: --reason, --force on protected envs).
+- Container hop: a system reaches a container's port through ssh with
+  `via: [box, {container: pg}]` (or `{container: pg, network: backend}`, optional `sudo: true` → `sudo -n docker`).
+  The hop must directly follow an ssh system and be last. On each new connection tmvp runs
+  `docker inspect` over ssh to get the container IP (cached ≤3s; compose recreate changes it) and dials
+  `<ip>:<port of the target's host:port>` from the ssh host; the target's host name is ignored.
+  Errors: container not found, not running, docker not permitted (add the ssh user to the `docker` group).
+- Container/service/network names must match `^[A-Za-z0-9][A-Za-z0-9_.-]*$`.
+
+## Examples
+```
+tmvp all bastion ls
+tmvp all bastion health
+tmvp prod bastion @disk
+tmvp write prod bastion "systemctl restart api" --reason "deploy stuck"
+tmvp prod box docker ps -a
+tmvp prod box docker logs api --tail 200 --since 15m
+tmvp prod box docker compose logs web -F project=/srv/app
+tmvp prod box @disk -F container=api
+tmvp write prod box "rm -f /tmp/cache/*" -F container=api --reason "stale cache" --force
+```
+Container hop config:
+```yaml
+box: { type: ssh, host: db.internal.example, user: deploy, key: "${file:secrets.box_key}", host_key: "ssh-ed25519 AAAA..." }
+db:  { type: postgres, via: [box, {container: pg}], read: { dsn: "${secrets.db_ro}" } }   # dsn host ignored, port used
+```
+
+
+---
+<!-- docs/llms/types/web.md -->
+
+# web
+
+Web apps through playwright-cli. Assets: `context.md` (login steps, never:) and `pages/*.md` (path, elements, actions, checks). click/fill/press/select/do mutate only via tmvp write.
+
+## Fields
+base_url, users: {name: {role, user, password (secret)}}, browser, login: {manual: browser}
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `login` | read | login [-F user=ops] — run the scripted login (manual: browser → tmvp login <env> <system>) |
+| `goto` | read | goto <page\|/path> — navigate (base_url + path) |
+| `text` | read | text <el\|page.el> — visible text of an element |
+| `snapshot` | read | snapshot [el] — accessibility snapshot (refs e1, e2 ...) |
+| `screenshot` | read | screenshot [el] — PNG under ~/.tmvp/<product>/web/shots |
+| `check` | read | check [page\|--all] — run the page checks |
+| `ls` | read | ls — declared pages across all asset roots (path, elements, actions, source); offline |
+| `pages` | read | pages — declared pages, paths, actions |
+| `elements` | read | elements <page> — declared elements, locators, mutating/never |
+| `click` | read-write | click <el> — read: non-mutating elements in destructive envs; else tmvp write ... click <el> --reason |
+| `fill` | read-write | fill <el> <value> — as click (value never on argv) |
+| `press` | read-write | press <key> — always mutating (may submit): tmvp write ... press <key> --reason |
+| `select` | read-write | select <el> <value> — as click |
+| `do` | read-write, default | do <action> [k=v ...] — page action; mutating ones via tmvp write (--preview resolves only) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = declared pages across asset roots (path, elements, actions, source) — works offline, no browser needed; `elements <page>` lists locators.
+
+## Examples
+```
+tmvp prod admin ls
+tmvp prod admin elements users
+tmvp prod admin text users.rows
+tmvp write prod admin do users.find-user email=a@b.test --reason "support #812"
+```

@@ -1,0 +1,32 @@
+# nats
+
+NATS / JetStream. `sub` is bounded by count and time.
+
+## Fields
+url (nats://host:4222, comma list) + one of creds (`${file:secrets.x}`), token, user/password, nkey; per mode
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — JetStream streams, KV buckets and object stores (kind, name, msgs, bytes) |
+| `streams` | read | streams → name, subjects, msgs, bytes, consumers |
+| `consumers` | read | consumers <stream> → name, pending, ack pending, redelivered |
+| `sub` | read | sub <subject> [-F wait=5s] (core subscribe; stops at --limit msgs or wait) |
+| `kv-get` | read | kv-get <bucket> <key> |
+| `pub` | write, default | pub <subject> <data> |
+| `kv-put` | write | kv-put <bucket> <key> <value> |
+| `purge` | destructive | purge <stream> [-F subject=<filter>] (destructive) |
+| `stream-delete` | destructive | stream-delete <stream> (destructive) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = JetStream streams, KV buckets and object stores.
+
+## Examples
+```
+tmvp all bus ls
+tmvp prod bus consumers ORDERS
+tmvp prod bus sub "orders.>" -F wait=5s --limit 10
+tmvp write prod bus pub orders.retry '{"id":42}' --reason "replay #812"
+```

@@ -1,0 +1,36 @@
+# grafana
+
+Grafana HTTP API: dashboards → the queries behind each panel, datasources, Grafana-managed alert state, annotations, and `query` on any datasource through `/api/ds/query` (Prometheus, Loki, Elasticsearch, OTel backends — whatever Grafana can query). Writes: `annotate`, `silence create|expire`. Nothing is ever deleted.
+
+## Fields
+url (or base_url), token (service-account token: `${secrets.grafana_sa}`; Viewer for reads, Editor for annotate/silence), org_id, headers, ca, insecure. 401 → `auth_error`; 403 → `policy_blocked` (role too low).
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [substring] — dashboards (uid, folder), datasources (uid, type), saved queries/*.expr |
+| `dashboards` | read | dashboards [-F q=<title search>] [-F tag=<tag>] — uid, title, folder, tags |
+| `dashboard` | read | dashboard <uid> — one row per panel query: panel, title, type, datasource, ref, expr |
+| `datasources` | read | datasources — uid, name, type, default |
+| `alerts` | read | alerts [-F state=firing\|pending] — Grafana-managed (unified) alert instances: alert, state, severity, since, labels, summary |
+| `silences` | read | silences — Grafana alertmanager silences: id, state, matchers, ends, comment |
+| `annotations` | read | annotations [-F tags=a,b] [-F dashboard=<uid>] — over --since (default 24h) |
+| `query` | read, @item | query <datasource-uid> '<expr>' \| query @saved — via /api/ds/query over --since (default 1h, ≤ 7d), rows capped by --limit; -F step=60s, other -F k=v go into the query object (e.g. -F queryType=range) |
+| `annotate` | write, default | annotate '<text>' [-F tags=deploy,api] [-F dashboard=<uid>] [-F panel=<id>] [-F time=RFC3339] [-F end=RFC3339] |
+| `silence` | write | silence create '<alertname=X,env=~prod.*>' [-F duration=1h] \| silence expire <id> — Grafana alertmanager (comment = --reason) |
+<!-- END verbs -->
+
+## Discovery
+`ls [substring]` = dashboards (uid) + datasources (uid, type) + saved `assets/<system>/queries/<name>.expr` (front-matter `datasource: <uid>`, body = expression; `tmvp prod grafana @name` runs `query`). `dashboard <uid>` shows the exact query each panel runs — paste it into `query`.
+
+## Examples
+```
+tmvp prod grafana ls latency
+tmvp prod grafana dashboard abc123
+tmvp prod grafana query prom1 'sum(rate(http_requests_total{code=~"5.."}[5m]))' --since 6h -F step=1m
+tmvp prod grafana query loki1 '{app="api"} |= "error"' -F queryType=range --limit 50
+tmvp prod grafana alerts -F state=firing
+tmvp write prod grafana annotate "deploy api v2.3" -F tags=deploy,api --reason "deploy marker"
+tmvp write prod grafana silence create 'alertname=HighErr,env=prod' -F duration=1h --reason "planned failover"
+```

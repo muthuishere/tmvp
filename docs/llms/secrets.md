@@ -1,0 +1,61 @@
+# Secrets & certificates — health
+
+Secrets are `$(command)`s run lazily by the local server and held in memory only
+(see `tmvp llms config`). These commands report on them **without ever printing a
+value or key material**.
+
+## `tmvp secrets status [-e envsel] [--days 30]`
+
+Fetches every secret in scope (top-level + the selected envs; all envs without `-e`)
+and prints one row per name:
+
+| Column | Meaning |
+|---|---|
+| `state` | `ok` · `missing` (command failed / printed nothing) · `invalid` (rejected / too short) · `login_required` (a system using it fails its `login.check`) |
+| `source` | the first word of the command only (`sec`, `op`, `aws` …); `env` for `${VAR}` secrets |
+| `fetched_at` | last fetch by this server |
+| `updated` | `yes`/`no`: the value changed since the previous fetch (compared by a salted hash kept in server memory, never the value); `unknown` on the first fetch |
+| `expires_at` | when the command printed `{"value":…,"expires_at":…}` |
+| `cert_*` | for PEM / kubeconfig (`client-certificate-data`, embedded PEM) / service-account JSON: earliest x509 `NotAfter`, days left, subject, count, `ok`/`expiring`/`expired` |
+| `private_key` | whether a private key is present (`true`/`false`; never the key) |
+
+Exit 2 when any secret is not ok, 1 when a held cert is expired.
+
+## `tmvp secrets audit [--since 1d]`
+
+From the audit log: every `fetch`, `refresh`, `invalidate` (after an auth error) and
+`failure`, per name, with time, the command that triggered it (`run prod.db query`) and
+`updated`. No values.
+
+## `tmvp certs [-e envsel] [--days 30]`
+
+TLS handshake (read-only, 5s timeout, through `via:` tunnels) with every system that has
+a TLS endpoint, plus certs held in secrets:
+
+- postgres: DSN with `sslmode=require|verify-ca|verify-full` (SSLRequest, then TLS)
+- `https://` `url`/`base_url` (http, web, prometheus, elasticsearch, grafana, loki …)
+- k8s: the API server of the kubeconfig `context`
+- `rediss://`, `tls://`, `wss://`, `mongodb…?tls=true`; `host`/`brokers` with `tls: true` or `security_protocol: SSL`
+
+Per endpoint: leaf `NotAfter`, days left (`chain_min_days` over the chain), issuer, SANs,
+trusted (system roots). `expiring` when < `--days`; exit 1 when anything is expired or
+unreachable.
+
+## `tmvp doctor`
+
+The summary adds two lines — `secrets:` (ok / missing / certs expiring) and
+`certificates:` (endpoints expiring within 30 days) — and the top fixes name them.
+
+## `$dotenv(file, KEY)` — use the .env files you already have
+```yaml
+envs:
+  prod:
+    secrets:
+      pg_pw: "$dotenv(.env.prod, PGPASSWORD)"   # see path rules below
+```
+Paths: `.env.prod` = repo root (falls back to the config's folder if not there); `./x` or `../x` = relative to config.yaml; `/abs/path`, `C:\…`, `\\server\share\…` and `~/…` as written. `/` and `\` both work as separators on every OS, so one config.yaml works on macOS, Linux and Windows.
+tmvp's local server reads just that key (dotenv rules: `export`, quotes, `# comments`, last definition wins) and keeps the value in memory — the agent only ever sees the file and key names. A missing file, missing or empty key is `secret_missing`, naming file and key, never a value. `tmvp env-keys` lists the keys each env file has.
+The value still sits in a plain-text file on disk: fine to start; for prod, prefer `$file(sec get … --out ${out})` (encrypted, unreadable even with `cat`).
+
+## `${VAR}` — process environment
+`pg_pw: "${PGPASSWORD}"` (or `${PGPASSWORD:-default}`) reads the variable from the **tmvp server's** environment, i.e. the shell that first started it (`tmvp server stop` after changing the variable). Good for CI; for laptops prefer `$dotenv(…)` or `sec`, which don't depend on which terminal started the server.

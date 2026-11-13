@@ -1,0 +1,81 @@
+services:
+  db-dev:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acme
+      POSTGRES_DB: acme
+      POSTGRES_PASSWORD: ${ACME_DEMO_PG_PASSWORD:?set ACME_DEMO_PG_PASSWORD}
+      TMVP_DEMO_ENV: dev
+    ports:
+      - "127.0.0.1:55441:5432"
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sh:/docker-entrypoint-initdb.d/02-seed.sh:ro
+  app-dev:
+    image: alpine:3.20
+    container_name: acme-app-dev-7f3c2a
+    environment:
+      APP_ENV: dev
+    volumes:
+      - ./app/logger.sh:/logger.sh:ro
+    command: ["/bin/sh", "/logger.sh"]
+  db-dev2:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acme
+      POSTGRES_DB: acme
+      POSTGRES_PASSWORD: ${ACME_DEMO_PG_PASSWORD:?set ACME_DEMO_PG_PASSWORD}
+      TMVP_DEMO_ENV: dev2
+    ports:
+      - "127.0.0.1:55442:5432"
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sh:/docker-entrypoint-initdb.d/02-seed.sh:ro
+  app-dev2:
+    image: alpine:3.20
+    container_name: acme-app-dev2-7f3c2a
+    environment:
+      APP_ENV: dev2
+    volumes:
+      - ./app/logger.sh:/logger.sh:ro
+    command: ["/bin/sh", "/logger.sh"]
+  db-staging:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acme
+      POSTGRES_DB: acme
+      POSTGRES_PASSWORD: ${ACME_DEMO_PG_PASSWORD:?set ACME_DEMO_PG_PASSWORD}
+      TMVP_DEMO_ENV: staging
+    ports:
+      - "127.0.0.1:55443:5432"
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sh:/docker-entrypoint-initdb.d/02-seed.sh:ro
+  app-staging:
+    image: alpine:3.20
+    container_name: acme-app-staging-7f3c2a
+    environment:
+      APP_ENV: staging
+    volumes:
+      - ./app/logger.sh:/logger.sh:ro
+    command: ["/bin/sh", "/logger.sh"]
+  db-prod:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acme
+      POSTGRES_DB: acme
+      POSTGRES_PASSWORD: ${ACME_DEMO_PG_PASSWORD:?set ACME_DEMO_PG_PASSWORD}
+      TMVP_DEMO_ENV: prod
+    ports:
+      - "127.0.0.1:55444:5432"
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sh:/docker-entrypoint-initdb.d/02-seed.sh:ro
+  app-prod:
+    image: alpine:3.20
+    container_name: acme-app-prod-7f3c2a
+    environment:
+      APP_ENV: prod
+    volumes:
+      - ./app/logger.sh:/logger.sh:ro
+    command: ["/bin/sh", "/logger.sh"]

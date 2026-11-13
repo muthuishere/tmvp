@@ -1,0 +1,34 @@
+version: 1
+product: acme
+default_env: dev
+envs:
+  dev:
+    secrets:
+      pg_pw: "$dotenv(.env.dev, PGPASSWORD)"
+    type: dev
+    destructive: false
+    systems:
+      db:  { type: postgres, read: { dsn: "host=127.0.0.1 port=55441 dbname=acme user=acme password='${secrets.pg_pw}' sslmode=disable" } }
+      app: { type: script, env: { APP_ENV: dev } }
+  dev2:
+    secrets:
+      pg_pw: "$dotenv(.env.dev2, PGPASSWORD)"
+    type: dev
+    destructive: false
+    systems:
+      db:  { type: postgres, read: { dsn: "host=127.0.0.1 port=55442 dbname=acme user=acme password='${secrets.pg_pw}' sslmode=disable" } }
+      app: { type: script, env: { APP_ENV: dev2 } }
+  staging:
+    secrets:
+      pg_pw: "$dotenv(.env.staging, PGPASSWORD)"
+    type: staging
+    systems:
+      db:  { type: postgres, read: { dsn: "host=127.0.0.1 port=55443 dbname=acme user=acme password='${secrets.pg_pw}' sslmode=disable" } }
+      app: { type: script, env: { APP_ENV: staging } }
+  prod:
+    secrets:
+      pg_pw: "$dotenv(.env.prod, PGPASSWORD)"
+    type: production
+    systems:
+      db:  { type: postgres, read: { dsn: "host=127.0.0.1 port=55444 dbname=acme user=acme password='${secrets.pg_pw}' sslmode=disable" } }
+      app: { type: script, env: { APP_ENV: prod } }

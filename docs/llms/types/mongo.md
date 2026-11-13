@@ -1,0 +1,33 @@
+# mongo
+
+MongoDB. Reads use secondaryPreferred, `maxTimeMS` and a document cap; `$out`/`$merge` refused in reads. Filters/pipelines are relaxed Extended JSON, inline or `@saved` (`queries/*.json`).
+
+## Fields
+read.uri / write.uri (secret mongodb:// URI), database (or in the URI path); `-F db=x` per call
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls [db] — saved queries (@name, all asset roots) then live collections/views |
+| `collections` | read | collections [db] → collection names and types |
+| `find` | read | find <coll> ['{filter}'\|@saved] [-F projection='{..}' -F sort='{..}' -F skip=N] |
+| `aggregate` | read | aggregate <coll> '[pipeline]'\|@saved ($out/$merge refused: use aggregate-out) |
+| `count` | read | count <coll> ['{filter}'\|@saved] |
+| `insert` | write | insert <coll> '{doc}'\|'[docs]'\|@saved |
+| `update` | write | update <coll> '{filter}' '{update}' (updateMany; empty filter = destructive) |
+| `delete` | write | delete <coll> '{filter}' (deleteMany; empty filter = destructive) |
+| `aggregate-out` | write | aggregate-out <coll> '[pipeline with $out/$merge]'\|@saved |
+| `drop` | destructive | drop <coll> (destructive) |
+<!-- END verbs -->
+
+## Discovery
+`ls [db]` = saved queries + live collections and views.
+
+## Examples
+```
+tmvp all docs ls
+tmvp prod docs find users '{"email":"a@b.test"}' -F projection='{"_id":1}'
+tmvp prod docs count orders '{"status":"open"}'
+tmvp write prod docs update users '{"_id":"x"}' '{"$set":{"blocked":true}}' --reason "abuse #9" --preview
+```

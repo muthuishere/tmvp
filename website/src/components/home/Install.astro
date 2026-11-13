@@ -1,0 +1,57 @@
+---
+// Install panel: three tabs, one command each, a copy button. Commands match start/install.md.
+const tabs = [
+	{ id: 'sh', label: 'macOS / Linux', cmd: 'curl -fsSL https://raw.githubusercontent.com/muthuishere/tmvp/main/install.sh | sh', note: 'Installs to ~/.local/bin, no sudo. Verifies sha256 against the release checksums, then runs tmvp version.' },
+	{ id: 'win', label: 'Windows', cmd: 'curl -fsSLO https://raw.githubusercontent.com/muthuishere/tmvp/main/install.cmd && install.cmd', note: 'Same checks (certutil sha256); installs tmvp.exe for the current user.' },
+	{ id: 'src', label: 'From source', cmd: 'go install github.com/muthuishere/tmvp/cmd/tmvp@latest', note: 'Go 1.26. Until the first release is published, this is the way in.' },
+];
+---
+
+<div class="tm-install not-content" data-tm-install>
+	<div class="tm-tabs" role="tablist">
+		{tabs.map((t, i) => (
+			<button role="tab" type="button" id={`tm-it-${t.id}`} aria-controls={`tm-ip-${t.id}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>{t.label}</button>
+		))}
+	</div>
+	{tabs.map((t, i) => (
+		<div class="tm-install-panel" role="tabpanel" id={`tm-ip-${t.id}`} aria-labelledby={`tm-it-${t.id}`} hidden={i !== 0}>
+			<div class="tm-cmd"><span class="p">$</span><code>{t.cmd}</code><button type="button" class="tm-copy" data-copy={t.cmd} aria-label="Copy command">copy</button></div>
+			<p class="tm-note">└ {t.note}</p>
+		</div>
+	))}
+</div>
+
+<script>
+	document.querySelectorAll<HTMLElement>('[data-tm-install]').forEach((root) => {
+		const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role=tab]')];
+		const select = (tab: HTMLButtonElement) => {
+			tabs.forEach((t) => {
+				const on = t === tab;
+				t.setAttribute('aria-selected', String(on));
+				t.tabIndex = on ? 0 : -1;
+				root.querySelector<HTMLElement>('#' + t.getAttribute('aria-controls'))!.hidden = !on;
+			});
+		};
+		tabs.forEach((t, i) => {
+			t.addEventListener('click', () => select(t));
+			t.addEventListener('keydown', (e) => {
+				const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+				if (!d) return;
+				const next = tabs[(i + d + tabs.length) % tabs.length];
+				select(next);
+				next.focus();
+			});
+		});
+		root.querySelectorAll<HTMLButtonElement>('.tm-copy').forEach((b) =>
+			b.addEventListener('click', async () => {
+				try {
+					await navigator.clipboard.writeText(b.dataset.copy || '');
+					b.textContent = 'copied';
+				} catch {
+					b.textContent = 'select it';
+				}
+				setTimeout(() => (b.textContent = 'copy'), 1600);
+			}),
+		);
+	});
+</script>

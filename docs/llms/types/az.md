@@ -1,0 +1,28 @@
+# az
+
+Azure through `az`; a service principal runs in a private AZURE_CONFIG_DIR per call.
+
+## Fields
+subscription, tenant/client_id/client_secret (secret) or certificate, workspace; login: {manual: "az login", check: "az account show"}
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — configured scope (subscription, resource_group, workspace, tenant), whoami, saved scripts |
+| `whoami` | read | az account show (subscription, tenant, user) |
+| `logs` | read | logs ["<kql>"] — Log Analytics (workspace:) or, without a query, the activity log; bounded by --since (≤7d) / --limit |
+| `call` | read-write | call <az args> — read commands only (list/show/query ...); through tmvp write any call (--preview shows it) |
+| `cli` | write, default | alias of `call` for tmvp write (kept for compatibility) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = configured scope (subscription, resource_group, workspace, tenant) + saved scripts + whoami.
+
+## Examples
+```
+tmvp all azure ls
+tmvp prod azure logs "AppRequests | take 20"
+tmvp prod azure call vm list
+tmvp write prod azure call vm start -n api -g rg --reason "restore"
+```

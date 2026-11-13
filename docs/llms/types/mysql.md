@@ -1,0 +1,28 @@
+# mysql
+
+MySQL / MariaDB. Read-only session + `START TRANSACTION READ ONLY`, `max_execution_time`, row cap. Writes in a transaction; `--preview` rolls back (not for DDL).
+
+## Fields
+read.dsn / write.dsn (secret, go-sql-driver DSN or mysql:// URL); `via:`; `limits:`
+
+## Verbs
+<!-- BEGIN verbs (generated from the connector registry: go generate ./... ; do not edit) -->
+| Verb | Mode | Help |
+|---|---|---|
+| `ls` | read | ls — saved queries (@name, all asset roots) then live tables and views of the current database |
+| `health` | read | ping, server version, read_only, latency |
+| `describe` | read | describe → tables of the current database; describe <[db.]table> → columns |
+| `query` | read, @item | query "<sql>" [params...] \| query @saved [params...] (read-only tx, max_execution_time, row cap) |
+| `exec` | write, default | exec "<statement>"\|@saved [params...] (tmvp write; --preview = rolled-back tx, not for DDL) |
+<!-- END verbs -->
+
+## Discovery
+`ls` = saved queries + live tables and views of the current database.
+
+## Examples
+```
+tmvp all my ls
+tmvp prod my describe orders
+tmvp prod my query "select id from orders limit 5"
+tmvp write prod my "delete from sessions where expires < now()" --reason "cleanup" --preview
+```
