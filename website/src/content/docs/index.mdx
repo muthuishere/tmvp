@@ -23,6 +23,28 @@ import Wiring from '../../components/home/Wiring.astro';
 import AuditTicker from '../../components/home/AuditTicker.astro';
 import Install from '../../components/home/Install.astro';
 
+<p class="tm-eyebrow">The problem</p>
+
+## Should your agent run that query?
+
+Your coding agent needs to check something in production. It doesn't really know:
+
+- Will this query finish in a second, or lock a table for an hour?
+- Is it a harmless `SELECT`, or will it slip in an `UPDATE`, `INSERT` or `DELETE`?
+- Does it need your database password just to try?
+
+Most of the time, we just hope it behaves.
+
+## tmvp makes it a process
+
+- **Credentials are never exposed** to the agent. They stay in LastPass, 1Password, `.env`, Vault or your cloud's secret manager.
+- **Every environment, one call:** dev, staging and production side by side, only the differences back.
+- **Read-only is decided by the system,** not by the model.
+- **Cost before running:** each query's time is estimated first; if it won't finish within your limit, it doesn't run.
+- **Every write needs a reason** and is recorded.
+
+Don't expose secrets, don't take the instance down — and it works even with a small, cheap model. One config file for all your environments, and a built-in skill creator that sets it up for each of your projects.
+
 <Systems />
 
 <p class="tm-eyebrow"><b>01</b> In the terminal</p>

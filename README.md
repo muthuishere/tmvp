@@ -1,8 +1,26 @@
 # tmvp
 
-**One safe connection for your coding agent to every system of your app, across every environment.**
+**Diagnose every environment. Safely.**
 
-Claude, Codex or any coding agent — or you — can look into logs, run database queries and inspect queues across dev, staging and prod in one call, under a policy that keeps your systems up and your credentials untouched.
+## The problem
+
+Your coding agent needs to check something in production. Should it run that query? It doesn't really know:
+
+- Will it finish in a second, or lock a table for an hour?
+- Is it a harmless `SELECT`, or will it slip in an `UPDATE`, `INSERT` or `DELETE`?
+- Does it need your database password just to try?
+
+Most of the time, we just hope it behaves.
+
+## tmvp makes it a process
+
+- **Credentials are never exposed** to the agent — they stay in LastPass, 1Password, `.env`, Vault or your cloud's secret manager.
+- **Every environment, one call** — dev, staging and production side by side, only the differences back.
+- **Read-only is decided by the system,** not by the model.
+- **Cost before running** — each query's time is estimated first; if it won't finish within your limit, it doesn't run.
+- **Every write needs a reason** and is recorded.
+
+Don't expose secrets, don't take the instance down — and it works even with a small, cheap model. One config file for all your environments, plus a built-in skill creator that sets it up for each of your projects.
 
 📖 Docs: **https://muthuishere.github.io/tmvp/**
 
@@ -11,7 +29,7 @@ tmvp all db query "select status, count(*) from orders where created_at > now() 
 ```
 One call, every environment, only the rows where environments disagree.
 
-## Why
+## In detail
 
 - **Nothing goes down.** Reads run read-only (read-only transactions, method allowlists), with row caps and timeouts. A query estimated to run too long is refused before it starts (`too_expensive`).
 - **No silent writes.** A read can never write (`policy_blocked`). Writes go through `tmvp write <env> <system> … --reason "…"` — one target, `--preview` first, `--force` on protected envs — and every write lands in the audit log (`tmvp logs --writes`).
