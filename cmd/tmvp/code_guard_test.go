@@ -78,3 +78,36 @@ func TestCodeStringDoublingFailsFast(t *testing.T) {
 		t.Fatalf("%d %s", code, out)
 	}
 }
+
+// Outside any product repo, code mode still answers what needs no config.
+func TestCodeWithoutConfig(t *testing.T) {
+	out := envSetup(t, codeCfg)
+	globals.Config = ""
+	nocfg := func(args ...string) int {
+		out.Reset()
+		cmd := newRoot()
+		cmd.SetArgs(args)
+		cmd.SetOut(out)
+		cmd.SetErr(out)
+		err := cmd.Execute()
+		if e, ok := err.(exitError); ok {
+			return e.code
+		}
+		if err != nil {
+			out.WriteString(err.Error())
+			return 1
+		}
+		return 0
+	}
+	if c := nocfg("code", "eval", "1+2"); c != 0 || !strings.Contains(out.String(), "3") {
+		t.Fatalf("eval: %d %s", c, out)
+	}
+	for _, sub := range []string{"operations", "docs", "version", "capabilities"} {
+		if c := nocfg("code", sub); c != 0 {
+			t.Fatalf("%s: %d %s", sub, c, out)
+		}
+	}
+	if c := nocfg("code", "scripts"); c == 0 || !strings.Contains(out.String(), "no tmvp config found") {
+		t.Fatalf("scripts must need a config: %d %s", c, out)
+	}
+}

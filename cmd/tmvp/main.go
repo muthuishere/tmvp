@@ -127,6 +127,9 @@ func main() {
 		_ = root.Help() // plain help needs no config
 		return
 	}
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		os.Args = []string{os.Args[0], "version"} // same as `tmvp version`; needs no config
+	}
 	root.SetArgs(passUnknownFlags(root, os.Args[1:]))
 	err := root.ExecuteContext(ctx)
 	if err == nil {

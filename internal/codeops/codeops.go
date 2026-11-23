@@ -455,7 +455,7 @@ func ResolveScript(cfg *config.Config, arg string) (string, error) {
 	if _, err := os.Stat(arg); err == nil {
 		return arg, nil
 	}
-	if cfg == nil {
+	if cfg == nil || cfg.Dir == "" {
 		return "", errs.New(errs.NotFound, "no saved script %q (no skill config found)", arg).WithHint("tmvp --skill <dir> code run <name>")
 	}
 	p := ScriptsDir(cfg) + string(os.PathSeparator) + arg + ".js"

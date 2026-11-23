@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/muthuishere/clicodemode/codemode"
@@ -77,15 +78,24 @@ func runCode(cmd *cobra.Command, args []string, f codeFlags) error {
 	if len(args) == 0 {
 		return cmd.Help()
 	}
+	sub := args[0]
 	cfg, err := loadConfig()
 	if err != nil {
-		return err
+		// No product config: docs, version, eval, check, operations and
+		// capabilities still work (no operations registered); scripts and
+		// running against systems need a config.
+		if globals.Config != "" || globals.Skill != "" || !strings.Contains(err.Error(), "no tmvp config found") || sub == "scripts" {
+			return err
+		}
+		cfg = &config.Config{Envs: map[string]*config.Env{}}
+		if sub != "docs" && sub != "version" && sub != "eval" {
+			fmt.Fprintln(stderr, "# code: no product config here, so no operations are registered. Operations are <system>.<verb> from a config (db.query, logs.search, ...): run inside a product repo or pass --skill <dir>. See tmvp verbs.")
+		}
 	}
 	if globals.Env != "" {
 		return errs.New(errs.Usage, "-e/--env does not apply to tmvp code").
 			WithHint(`pass env in each operation call: ops.db.query({ env: "prod", args: [...] })`)
 	}
-	sub := args[0]
 	if sub == "scripts" {
 		return printScripts(cfg)
 	}
