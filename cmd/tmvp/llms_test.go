@@ -25,7 +25,7 @@ var lsPending = map[string]bool{}
 func TestEveryConnectorHasLs(t *testing.T) {
 	for _, typ := range connector.Types() {
 		v, ok := connector.FindVerb(connector.VerbsOf(typ), "ls")
-		if lsPending[typ] {
+		if lsPending[typ] || testOnlyTypes[typ] {
 			continue
 		}
 		if !ok || v.Mode != connector.Read {
@@ -41,6 +41,9 @@ func TestLLMSDocsInSync(t *testing.T) {
 	update := os.Getenv("TMVP_UPDATE_DOCS") != ""
 	re := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(beginVerbs) + `.*?` + regexp.QuoteMeta(endVerbs))
 	for _, typ := range connector.Types() {
+		if testOnlyTypes[typ] {
+			continue
+		}
 		p := filepath.Join(docsRoot, "docs", "llms", "types", typ+".md")
 		b, err := os.ReadFile(p)
 		if err != nil {
@@ -81,7 +84,7 @@ func buildFull(t *testing.T) []byte {
 	var b bytes.Buffer
 	b.Write(idx)
 	var files []string
-	for _, n := range []string{"overview", "install", "config", "writes", "errors", "server", "skills", "troubleshooting", "doctor", "environments", "secrets", "logs-and-metrics"} {
+	for _, n := range []string{"overview", "install", "config", "writes", "code-mode", "errors", "server", "skills", "troubleshooting", "doctor", "environments", "secrets", "logs-and-metrics"} {
 		files = append(files, filepath.Join("docs", "llms", n+".md"))
 	}
 	types, _ := filepath.Glob(filepath.Join(docsRoot, "docs", "llms", "types", "*.md"))

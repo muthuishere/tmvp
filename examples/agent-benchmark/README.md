@@ -68,6 +68,18 @@ Agent repo for the tmvp run: copy `app/`, then `tmvp new skill acme --from skill
 
 Note: `app/email.go` says the region is "used exactly as stored", which pointed every agent at whitespace. Remove that line for a harder run.
 
+## Code mode: one program per investigation
+
+`skill/scripts/` holds one saved script per scenario (`tmvp code run stuck-orders`, `missed-migration`, `trailing-space`). Each runs its reads across all four envs inside one program and returns only the summary. Measured on a warm server, median of 7 runs, bytes of `--json` output the agent reads:
+
+| Scenario | `tmvp code run <script>` | Separate tmvp calls |
+|---|---|---|
+| 1. Stuck orders | 618 B · 83 ms | 3,245 B · 112 ms (3 calls) |
+| 2. Missed migration | 428 B · 167 ms | 70,554 B · 291 ms |
+| 3. Trailing space | 1,033 B · 172 ms | 172,499 B · 187 ms |
+
+The answer is the same either way; the program sends the model far fewer bytes. List the scripts with `tmvp --skill skill code scripts`.
+
 ## What it shows
 
 - **Every model found every cause — including Haiku with tmvp.** The process (skill → map of environments → one batched, read-only read → only the differences) gets a small model there. tmvp is not a smarter model; it is a safer, repeatable process.

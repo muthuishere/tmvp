@@ -24,6 +24,7 @@ Usage:
 Available Commands:
   certs       TLS cert expiry of every system's endpoint + certs held in secrets (warn < --days, fail if expired)
   check       Validate config, resolve secrets (names only) and connect to every selected system
+  code        Code Mode: run ONE JS program that calls tmvp operations (<system>.<verb>) in-process; only its final JSON returns
   completion  Generate the autocompletion script for the specified shell
   config      Inspect the config
   doctor      What is installed, what can I connect to, what is broken (works without a config)
@@ -85,6 +86,47 @@ Usage:
 
 Flags:
   -h, --help   help for check
+```
+
+## tmvp code
+```text
+Code Mode: an agent sends one program; it calls tmvp operations (Promise.all,
+loops) and only the final value comes back. Every call goes through the tmvp
+server like a CLI call: read-only, cost guard (too_expensive), env-type
+protection and the audit log (tmvp logs) all apply.
+
+  tmvp code operations                      # db.query, db.describe, ...
+  tmvp code describe db.query
+  tmvp code run prog.js --json              # {ok, value, error, ms}
+  tmvp code run stuck-orders                # <skill dir>/scripts/stuck-orders.js
+  tmvp code scripts                         # saved scripts + first-line description
+  tmvp code check prog.js                   # diagnostics, nothing runs (exit 2 on errors)
+
+  const r = await Promise.all(["dev","staging","prod"].map(env =>
+    ops.db.query({ env, args: ["select count(*) as n from orders"] })))
+
+Operations take {env, args[], flags{}, labels, diff, limit, since, timeout, reason};
+env accepts what the CLI selector accepts (dev, dev,prod, all, prod*, type:prod).
+Results are {rows, lines, targets, errors, exit}. A refused call throws with
+the tmvp code first (policy_blocked: ..., too_expensive: ...).
+Writes are write.<system>.<verb> {env, args, reason, preview, force}; they
+need --allow-writes and still go through the server write path.
+
+Exit codes: 0 ok, 1 the program failed, 2 nothing ran (check errors, usage).
+Scripts never hold secrets: credentials stay in config.yaml secret references.
+
+Usage:
+  tmvp code <run|check|capabilities|describe|operations|docs|skill|scripts> [args] [flags]
+
+Flags:
+      --allow-writes        let write.<system>.<verb> run (server still requires reason, one env, force on protected envs)
+      --concurrency int     tmvp operations in flight at once (default 4)
+  -h, --help                help for code
+      --input input         JSON value the program reads as the global input
+      --max-memory int      soft Go memory limit in MiB for this process (best effort: a runaway program fails instead of exhausting the machine); 0 = off (default 1024)
+      --max-ops int         tmvp operation calls per program; past it the program stops (uncatchable, exit 1) (default 200)
+      --max-steps int       program step budget (statements + calls + loop iterations) (default 1000000)
+      --max-time duration   wall-clock budget for the whole program (default 1m0s)
 ```
 
 ## tmvp config

@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/muthuishere/tmvp/internal/config"
+	"github.com/muthuishere/tmvp/internal/connector"
 	"github.com/muthuishere/tmvp/internal/errs"
 )
 
@@ -133,10 +134,34 @@ func New(o Options) (string, error) {
 			return "", err
 		}
 	}
+	if err := writeNew(filepath.Join(dir, "scripts", "example.js"), exampleScript(o.Systems)); err != nil {
+		return "", err
+	}
 	if err := Sync(filepath.Join(dir, "config.yaml")); err != nil {
 		return "", err
 	}
 	return dir, nil
+}
+
+// exampleScript is the scaffolded scripts/example.js for `tmvp code run
+// example`: one read on every env, only a summary returned. Scripts hold no
+// secrets; credentials stay in config.yaml secret references.
+func exampleScript(systems []SystemSpec) []byte {
+	head := "// Example: one read on every env, only a summary comes back (tmvp code run example)\n" +
+		"// Scripts never hold secrets: credentials stay in config.yaml secret references.\n"
+	for _, s := range systems {
+		for _, want := range []string{"health", "ls", "describe"} {
+			v, ok := connector.FindVerb(connector.VerbsOf(s.Type), want)
+			if !ok || !v.Mode.Readable() {
+				continue
+			}
+			return []byte(head + fmt.Sprintf("const r = await ops[%q].%s({ env: \"all\" })\n", s.Name, v.Name) +
+				"export default { ok: r.targets.filter(t => t.status === \"ok\").map(t => t.env), errors: r.errors }\n")
+		}
+	}
+	return []byte(head + "// list operations with: tmvp code operations\n" +
+		"// const r = await ops.<system>.<verb>({ env: \"all\", args: [] })\n" +
+		"export default { hello: \"tmvp code\" }\n")
 }
 
 // adopt reads an existing config, checks it loads and belongs to product,

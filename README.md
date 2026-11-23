@@ -80,6 +80,24 @@ tmvp --skill .agents/skills/acme-tmvp all db query "select 1"
 
 postgres · mysql · mongo · redis · elasticsearch · opensearch · kafka · nats · ssh (incl. docker over ssh) · k8s · portforward · aws · gcp · az · prometheus · loki · grafana · gh · git · http (+ OpenAPI) · grpc · web · script — chained through jump hosts and containers with `via:`.
 
+## Code mode
+
+For an investigation that needs several reads, the agent sends one program instead of many calls. The reads run across envs inside the program; only the summary comes back.
+
+```js
+// which env has stuck orders, and its rejected webhooks
+const stuck = await ops.db.query({ env: "all", args: ["select count(*)::int as n from orders where status = 'pending_payment'"] })
+const odd = stuck.rows.filter(r => r.n > 0).map(r => r.env)
+const hooks = await Promise.all(odd.map(env => ops.db.query({ env, args: ["select status_code, count(*)::int as n from webhook_events where status_code <> 200 group by 1"] })))
+export default odd.map((env, i) => ({ env, webhooks: hooks[i].rows }))
+```
+```sh
+tmvp --skill .agents/skills/acme-tmvp code run prog.js --json
+tmvp --skill .agents/skills/acme-tmvp code scripts        # saved scripts in <skill>/scripts/
+```
+
+Every call still goes through the tmvp server: read-only, cost guard, audit. Writes need `--allow-writes` and a reason. In the benchmark below, the missed-migration check returns 428 bytes instead of 70,554. See `tmvp llms code-mode`.
+
 ## Does it help? A small benchmark
 
 Three planted incidents in a four-environment demo app, the same prompt for every agent ([examples/agent-benchmark](examples/agent-benchmark)):

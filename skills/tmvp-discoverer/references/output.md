@@ -13,6 +13,7 @@
     scripts/<name>.sh              # ssh read scripts, front-matter read: true
     apis/<name>.md                 # saved read-only http calls
     notes/<topic>.md               # short gotchas
+  scripts/<name>.js                # code-mode investigations (tmvp code run <name>), only ones the user picked
 ```
 `.claude/skills/<project>-tmvp` is a relative symlink to it (made by `tmvp new skill`).
 

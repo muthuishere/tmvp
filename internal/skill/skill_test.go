@@ -263,7 +263,8 @@ func TestExportNoSecrets(t *testing.T) {
 func TestNoReferenceGuesses(t *testing.T) {
 	dir := scaffold(t, allTypes)
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && filepath.Base(p) != ".gitkeep" && filepath.Base(p) != "SKILL.md" && filepath.Base(p) != "config.yaml" {
+		if err == nil && !d.IsDir() && filepath.Base(p) != ".gitkeep" && filepath.Base(p) != "SKILL.md" && filepath.Base(p) != "config.yaml" &&
+			p != filepath.Join(dir, "scripts", "example.js") { // tmvp code run example
 			t.Errorf("unexpected pre-written asset %s", p)
 		}
 		return err

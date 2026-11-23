@@ -10,6 +10,7 @@ Learn from the CLI itself: `tmvp envs`, `tmvp systems`, `tmvp <env> <system> ls`
 - [install](docs/llms/install.md): install the binary, external CLIs, first skill
 - [config](docs/llms/config.md): config.yaml — vars, secrets, $(…), $file(…), ${file:…}, ${X:-d}, labels, via, login, limits, assets paths
 - [writes](docs/llms/writes.md): read vs write vs destructive, --reason, --preview, guards, audit
+- [code-mode](docs/llms/code-mode.md): `tmvp code run` — one program for multi-step investigations, saved scripts, writes, safety
 - [cost-and-timeouts](docs/llms/cost-and-timeouts.md): read cost guard — estimate before run, too_expensive, --timeout precedence, --force, per-type estimators
 - [errors](docs/llms/errors.md): error codes and exit codes, what to do for each
 - [server](docs/llms/server.md): the auto-started local server, env vars, lifecycle

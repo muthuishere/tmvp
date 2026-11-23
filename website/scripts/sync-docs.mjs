@@ -19,6 +19,7 @@ const map = {
   'environment-variables.md': ['secrets', 'env-files', 2],
   'secret-managers.md': ['secrets', 'managers', 3],
   'writes.md': ['concepts', 'reads-and-writes', 6],
+  'code-mode.md': ['concepts', 'code-mode', 6.5],
   'cost-and-timeouts.md': ['concepts', 'limits-cost-timeouts', 7],
   'server.md': ['concepts', 'local-server', 8],
   'logs-and-metrics.md': ['concepts', 'logs-and-metrics', 10],
