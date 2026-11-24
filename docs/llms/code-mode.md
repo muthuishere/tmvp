@@ -45,8 +45,7 @@ There is no `force` on reads.
 A call returns `{rows, lines, targets, errors, exit}`. Every row and line carries its `env`.
 A refused call throws, with the tmvp code first: `policy_blocked: …`, `too_expensive: …`.
 
-The language is a subset of JavaScript run inside the CLI (no Node, no npm, no `new`, no
-regular expressions). `tmvp code docs` lists what is supported.
+The language is a subset of JavaScript run inside the CLI (no Node, no npm; regular expressions, `new`, Map, Set, Date and classes work). `tmvp code docs` lists what is supported.
 
 ## Modules: recipes built in
 

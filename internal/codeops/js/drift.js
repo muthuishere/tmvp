@@ -1,9 +1,6 @@
 // Drift across envs: run one read everywhere and keep only what differs (config, flags, versions, stray whitespace).
 // Operations are passed by name ("db.query") because their names come from the product config.
 
-// call() throws synchronously for an unknown operation name; an async wrapper turns that into a rejection.
-async function run(op, args) { return call(op, args) }
-
 const META = { env: 1, system: 1 }
 
 function strip(row) {
@@ -19,7 +16,7 @@ function same(a, b) { return JSON.stringify(a) === JSON.stringify(b) }
 async function readAll(op, args, envs) {
   const list = envs && envs.length ? envs : [args.env || "all"]
   const rows = [], errors = []
-  const rs = await Promise.all(list.map(env => run(op, { ...args, env })
+  const rs = await Promise.all(list.map(env => call(op, { ...args, env })
     .catch(e => ({ rows: [], errors: [{ env, code: "error", message: String(e.message || e) }] }))))
   for (const r of rs) { rows.push(...r.rows); errors.push(...r.errors) }
   rows.sort(byEnvName) // parallel targets arrive in any order; keep output stable

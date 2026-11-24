@@ -1,9 +1,6 @@
 // Health sweep: a cheap probe per system across envs, returning only what is failing.
 // Operations are passed by name because their names come from the product config.
 
-// call() throws synchronously for an unknown operation name; an async wrapper turns that into a rejection.
-async function run(op, args) { return call(op, args) }
-
 /** Run every probe on the selected envs and return only the failing env/system pairs.
  * failing({ db: { op: "db.query", args: ["select 1"] }, app: { op: "app.run", args: ["@status"] } }, { env: "all" })
  * -> { failing: [{ probe, env, system, code, message }], ok: ["db@dev", ...], checked: 6 }.
@@ -14,7 +11,7 @@ export async function failing(probes, opts = {}) {
   const rs = await Promise.all(names.map(n => {
     const { op, ...args } = probes[n]
     const env = args.env || opts.env || "all"
-    return run(op, { ...args, env }).then(r => ({ r, env }), e => ({ e, env }))
+    return call(op, { ...args, env }).then(r => ({ r, env }), e => ({ e, env }))
   }))
   names.forEach((n, i) => {
     const { r, e, env } = rs[i]

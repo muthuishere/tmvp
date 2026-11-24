@@ -1,9 +1,6 @@
 // Incident evidence in one call: several reads in parallel folded per env, log hit counts, envs lagging behind.
 // Operations are passed by name ("db.query", "app.run") because their names come from the product config.
 
-// call() throws synchronously for an unknown operation name; an async wrapper turns that into a rejection.
-async function run(op, args) { return call(op, args) }
-
 function strip(row) {
   const o = {}
   for (const k of Object.keys(row)) if (k !== "env" && k !== "system") o[k] = row[k]
@@ -19,7 +16,7 @@ function caught(env, e) {
 function read(op, args, opts) {
   const env = args.env || opts.env || "all"
   // parallel targets arrive in any order; sort by env (stable) so output is repeatable
-  return run(op, { ...args, env }).then(r => ({ ...r, rows: r.rows.toSorted(byEnvName), lines: r.lines.toSorted(byEnvName) }), e => caught(env, e))
+  return call(op, { ...args, env }).then(r => ({ ...r, rows: r.rows.toSorted(byEnvName), lines: r.lines.toSorted(byEnvName) }), e => caught(env, e))
 }
 
 /** Run named reads in parallel and fold them per env, so you read one object instead of N result sets.
