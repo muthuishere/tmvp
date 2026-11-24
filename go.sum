@@ -94,6 +94,8 @@ github.com/muthuishere/clicodemode v0.6.1 h1:3hdaC2X5c1NsAwZO4BAA3wQJIe/8bGH2z6b
 github.com/muthuishere/clicodemode v0.6.1/go.mod h1:YCA6KXqK+B/AxlMKLUbyInwYIqdG01hoO/B+fvgk+/E=
 github.com/muthuishere/clicodemode v0.6.2 h1:ujfOPkwdp36Pf+DqDnD12xYSnGTwXhwpIjpu3AN9ZWo=
 github.com/muthuishere/clicodemode v0.6.2/go.mod h1:YCA6KXqK+B/AxlMKLUbyInwYIqdG01hoO/B+fvgk+/E=
+github.com/muthuishere/clicodemode v0.8.0 h1:NCQ69YTZmDVzaEoR3Udy4eZcCGKQXOByUY250joWjjc=
+github.com/muthuishere/clicodemode v0.8.0/go.mod h1:YCA6KXqK+B/AxlMKLUbyInwYIqdG01hoO/B+fvgk+/E=
 github.com/nats-io/nats.go v1.55.0 h1:Ng8QKHdvdHIWoaiq0+d/aH1BWkxvcJxWJ0Y/9BPKx3M=
 github.com/nats-io/nats.go v1.55.0/go.mod h1:y+DZoD1oBOYfZTU681eTUiUjI0vbqYGixNVFHcjHJ0k=
 github.com/nats-io/nkeys v0.4.16 h1:rd5oAuLOb8mnAycB0xleuEBNS1pVVnN0fv/FF34Eypg=

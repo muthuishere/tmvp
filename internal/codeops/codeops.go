@@ -18,6 +18,7 @@ package codeops
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -65,6 +66,13 @@ func (o Options) guard(a map[string]any) error {
 	return nil
 }
 
+// Modules are tmvp's own JS recipes (js/drift.js is "tmvp:drift"), baked into
+// the binary. They compose operations by name with call(), so they work for
+// any product config and add no privilege.
+//
+//go:embed js
+var jsModules embed.FS
+
 var opPart = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 // Build returns the registry for cfg. Systems or verbs whose names are not
@@ -72,6 +80,9 @@ var opPart = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 // and reported in skipped.
 func Build(o Options) (reg *codemode.Registry, skipped []string, err error) {
 	reg = codemode.NewRegistry("tmvp " + o.Version)
+	if err := reg.RegisterModules("tmvp", jsModules, "js"); err != nil {
+		return nil, nil, err
+	}
 	envRequired := o.Cfg.DefaultEnv == ""
 	for _, sys := range systems(o.Cfg) {
 		if !opPart.MatchString(sys.name) {

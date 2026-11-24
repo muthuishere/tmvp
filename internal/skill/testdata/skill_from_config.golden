@@ -21,7 +21,7 @@ Always call tmvp as `tmvp --skill <SKILLDIR> …` — it can only reach acme.
 3. `login_required` → show the user the exact command tmvp names (they run it), then retry. Never log in for them.
 4. Never print, ask for or handle secret values. config.yaml holds only `$(commands)`.
 5. Reach acme systems only through tmvp, never raw ssh, psql, kubectl or curl to its hosts: tmvp enforces read-only, timeouts and the audit log. A container name may be a prefix (`docker logs app-web`).
-6. Multi-step investigation (several reads, then compare or drill in) → one program: `tmvp --skill <SKILLDIR> code run <file.js|name> --json`. Check saved scripts first with `tmvp --skill <SKILLDIR> code scripts`; save a reusable one as `scripts/<name>.js` (first `//` line = description, no secrets). API: `tmvp llms code-mode`.
+6. Multi-step investigation (several reads, then compare or drill in) → one program: `tmvp --skill <SKILLDIR> code run <file.js|name> --json`. Check saved scripts first with `tmvp --skill <SKILLDIR> code scripts`, then import tmvp's modules before composing raw ops (`tmvp code modules`: `tmvp:drift` compare envs / odd one out / stray whitespace, `tmvp:evidence` gather reads per env / log hits / lagging envs, `tmvp:health` failing systems); save a reusable one as `scripts/<name>.js` (first `//` line = description, no secrets). API: `tmvp llms code-mode`.
 
 ## Learn the rest from tmvp
 - `tmvp --skill <SKILLDIR> envs` · `tmvp --skill <SKILLDIR> systems [env]`

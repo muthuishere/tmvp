@@ -288,7 +288,8 @@ Every call still goes through the local tmvp server, like a CLI call.
   inside the program; the agent gets a short summary.
 - **An investigation you will run again:** save it as a script in the skill (`scripts/<name>.js`).
 
-Check saved scripts before writing a new one: `tmvp code scripts`.
+Check saved scripts before writing a new one: `tmvp code scripts`. Then reach for tmvp's
+built-in modules (below) before composing raw operations.
 
 ## Commands
 
@@ -299,6 +300,8 @@ tmvp code check prog.js           # diagnostics only, nothing runs (exit 2 on er
 tmvp code run prog.js --json      # {ok, value, error, ms}
 tmvp code run stuck-orders        # <skill dir>/scripts/stuck-orders.js
 tmvp code scripts                 # saved scripts + first-line description
+tmvp code modules                 # tmvp:drift, tmvp:evidence, tmvp:health
+tmvp code describe tmvp:drift     # a module's exports, docs and source
 tmvp code docs                    # the language reference (supported JS subset)
 ```
 
@@ -322,7 +325,47 @@ A refused call throws, with the tmvp code first: `policy_blocked: …`, `too_exp
 The language is a subset of JavaScript run inside the CLI (no Node, no npm, no `new`, no
 regular expressions). `tmvp code docs` lists what is supported.
 
-## Example: compare envs, then drill into the odd one
+## Modules: recipes built in
+
+tmvp ships JavaScript modules inside the binary. They compose the operations above, so they
+add no privilege: every call they make is a normal operation call (server, cost guard, audit).
+Operation names depend on the product config, so a module takes the operation by name
+(`"db.query"`, `"app.run"`) plus that operation's own options. Results are plain JSON, and a
+failed call becomes an `errors` entry instead of a thrown program.
+
+```js
+import { compareEnvs, oddOneOut, strayWhitespace } from "tmvp:drift"
+import { gather, logHits, laggingEnvs } from "tmvp:evidence"
+import { failing } from "tmvp:health"
+```
+
+**`tmvp:drift`**: run one read everywhere, keep only what differs.
+- `compareEnvs(op, args, {key, value, envs})` → `{envs, differs: [{key, values}], errors}`; every env's value side by side, plus the keys whose values differ. Without `key`, whole row sets are compared and `differs` lists envs outside the majority.
+- `oddOneOut(op, args, {key="key", value="value", focus, envs})` → `{odd: [{key, env, value, others}], envs, errors}`; keys where one env differs while all others agree. `focus: "prod"` keeps only that env's odd keys.
+- `strayWhitespace(op, args, {key, value, envs})` → `{found: [{env, key, column, value}], errors}`; values with leading/trailing whitespace, JSON-quoted.
+
+**`tmvp:evidence`**: incident evidence in one call.
+- `gather({name: {op, ...args}}, {env="all"})` → `{envs: {env: {name: rows|lines}}, errors: [{check, ...}]}`; several reads in parallel, folded per env.
+- `logHits(op, args, {match})` → `{hits: {env: {count, sample}}, quiet: [env], errors}`; matching log lines per env with a sample.
+- `laggingEnvs(op, args, {column="version"})` → `{latest, behind: [{env, value, missing}], current: [env], errors}`; envs behind on a migration/release number.
+
+**`tmvp:health`**: what is failing right now.
+- `failing({name: {op, ...args}}, {env="all"})` → `{failing: [{probe, env, system, code, message}], ok, checked}`; only the failing env/system pairs.
+
+```js
+// which env has odd payfast config, and which envs are behind on migrations
+import { oddOneOut } from "tmvp:drift"
+import { laggingEnvs } from "tmvp:evidence"
+const [cfg, mig] = await Promise.all([
+  oddOneOut("db.query", { args: ["select key, value from app_config where key like 'payfast.%'"] }),
+  laggingEnvs("db.query", { args: ["select max(version)::int as version from schema_migrations"] }),
+])
+export default { odd: cfg.odd, behind: mig.behind }
+```
+
+The benchmark scripts in `examples/agent-benchmark/skill/scripts/` use these modules.
+
+## Example: compare envs, then drill into the odd one (raw operations)
 
 ```js
 // which env has orders stuck in pending_payment, and why

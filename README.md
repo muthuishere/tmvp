@@ -96,6 +96,13 @@ tmvp --skill .agents/skills/acme-tmvp code run prog.js --json
 tmvp --skill .agents/skills/acme-tmvp code scripts        # saved scripts in <skill>/scripts/
 ```
 
+The recipes agents keep rebuilding ship as modules inside the binary: `tmvp:drift` (`compareEnvs`, `oddOneOut`, `strayWhitespace`), `tmvp:evidence` (`gather`, `logHits`, `laggingEnvs`) and `tmvp:health` (`failing`). They take the operation by name, so they work for any product:
+
+```js
+import { oddOneOut } from "tmvp:drift"
+export default await oddOneOut("db.query", { args: ["select key, value from app_config"] }, { focus: "prod" })
+```
+
 Every call still goes through the tmvp server: read-only, cost guard, audit. Writes need `--allow-writes` and a reason. In the benchmark below, the missed-migration check returns 428 bytes instead of 70,554. See `tmvp llms code-mode`.
 
 ## Does it help? A small benchmark
